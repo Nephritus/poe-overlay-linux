@@ -1,5 +1,5 @@
 //! The running overlay program: at most one per user session, reachable by
-//! `poe-overlay trigger <action>` (which compositor hotkeys run).
+//! `poe-overlay trigger <action>`.
 //!
 //! It holds a lock file and listens on a Unix socket, both in
 //! `$XDG_RUNTIME_DIR`. The lock alone decides who is running; the socket is
@@ -33,7 +33,7 @@ impl Action {
         self.to_possible_value().expect("no skipped Actions").get_name().to_owned()
     }
 
-    /// What the player sees, e.g. in a compositor's list of hotkeys.
+    /// What the player sees, e.g. in a note about its hotkey.
     pub fn title(self) -> &'static str {
         match self {
             Action::CurrencyRates => "Currency Rates",
@@ -49,6 +49,7 @@ const SOCKET: &str = "poe-overlay.sock";
 pub struct RunningOverlay {
     _lock: File,
     actions: async_channel::Receiver<Action>,
+    sender: async_channel::Sender<Action>,
 }
 
 impl RunningOverlay {
@@ -71,7 +72,8 @@ impl RunningOverlay {
             _ => {}
         }
         let listener = UnixListener::bind(&socket)?;
-        let (tx, actions) = async_channel::unbounded();
+        let (sender, actions) = async_channel::unbounded();
+        let tx = sender.clone();
         std::thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(stream) = stream else {
@@ -86,12 +88,17 @@ impl RunningOverlay {
                 }
             }
         });
-        Ok(Some(RunningOverlay { _lock: lock, actions }))
+        Ok(Some(RunningOverlay { _lock: lock, actions, sender }))
     }
 
-    /// Actions sent by triggers, in arrival order.
+    /// Actions sent by triggers and hotkeys, in arrival order.
     pub fn actions(&self) -> async_channel::Receiver<Action> {
         self.actions.clone()
+    }
+
+    /// Where other sources (the overlay's own hotkeys) send their Actions.
+    pub fn sender(&self) -> async_channel::Sender<Action> {
+        self.sender.clone()
     }
 }
 

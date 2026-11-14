@@ -7,6 +7,7 @@ mod game_cursor;
 pub mod hotkeys;
 pub mod http;
 mod item_copier;
+pub mod key_grab;
 pub mod launch;
 pub mod log_follow;
 pub mod overlay;

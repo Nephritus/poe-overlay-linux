@@ -23,11 +23,11 @@ One box of content in the Overlay, shown or hidden on its own; only shown Panels
 _Avoid_: Widget, popup, card (reserved for Trade Request cards inside a Panel)
 
 **Action**:
-A request a hotkey sends to the running Overlay, such as toggling the Currency Rates Panel.
+A request the running Overlay carries out, such as toggling the Currency Rates Panel; sent by a Hotkey or by `poe-overlay trigger`.
 _Avoid_: Command, trigger (the CLI verb that sends it), event
 
 **Hotkey**:
-A key combination, chosen in `[hotkeys]`, that the compositor turns into an Action; the overlay can't see keys pressed in the game itself.
+A key combination, chosen in `[hotkeys]`, that the overlay grabs in Xwayland while the game is focused and turns into an Action.
 _Avoid_: Shortcut, keybind (the compositor's own entry), macro
 
 ## Leveling

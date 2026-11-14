@@ -15,7 +15,7 @@ Decisions from the design discussion (2026-11-14):
 
 **Blocked by:** 06 (Currency Rates panel toggled by hotkey)
 
-**Status:** ready-for-human
+**Status:** resolved (superseded by 18)
 
 - [x] `[hotkeys]` in config.toml maps each Action to a key (default `currency-rates = "Alt+R"`); invalid keys or unknown Actions are reported like other config mistakes
 - [x] On first launch under niri with hotkeys not yet set up, the Route Panel offers setup; "Set up" installs them and "Not now" dismisses them, and both answers are remembered across restarts
@@ -46,3 +46,7 @@ Decisions from the design discussion (2026-11-14):
 | Set up button | After `poe-overlay setup hotkeys --remove && rm ~/.local/state/poe-overlay/hotkeys.toml`, starting the game asks; clicking **Set up** shows "Hotkeys set up" and Alt+R works without restarting niri | |
 | Not now | Clicking **Not now** hides the row and it doesn't come back next start | |
 | Changed key | Set `currency-rates = "Ctrl+F7"` in `config.toml`, restart the game: Ctrl+F7 toggles the Panel, Alt+R no longer does | |
+
+### Superseded (agent, 2026-11-15)
+
+Ticket 18 replaced the compositor binds with key grabs in Xwayland. The niri writer, `setup hotkeys`, the first-launch row and `hotkeys.toml` are gone, so the in-game checks above no longer apply. `[hotkeys]` stays.

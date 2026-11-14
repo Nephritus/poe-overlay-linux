@@ -6,7 +6,7 @@ This product isn't affiliated with or endorsed by Grinding Gear Games in any way
 
 ## Requirements
 
-- A Wayland compositor with `wlr-layer-shell` and `wlr-foreign-toplevel-management`. niri is tested so far. GNOME is not supported.
+- A Wayland compositor with `wlr-layer-shell`, `wlr-foreign-toplevel-management` and Xwayland. niri is tested so far. GNOME is not supported.
 - GTK 4 and gtk4-layer-shell. On Arch: `pacman -S gtk4 gtk4-layer-shell`.
 - The English game client.
 
@@ -34,7 +34,7 @@ To opt out, set `"GrabPointer"="Y"` in that section. `launch` never changes a va
 
 ## Hotkeys
 
-Hotkeys are keybinds in your compositor that run `poe-overlay trigger <action>`. The running Overlay carries out the action while the game is focused. Actions and their default keys:
+While the game is focused, the overlay catches its hotkeys itself and carries out their Actions. The game doesn't receive those keys; other windows keep them, so Alt+D still works in your browser. Nothing is added to your compositor's config. Actions and their default keys:
 
 - `currency-rates` (Alt+R): show or hide the Currency Rates Panel.
 - `price-check` (Alt+D): price the item under the pointer (see [Price Check](#price-check)).
@@ -46,26 +46,17 @@ Choose keys in `~/.config/poe-overlay/config.toml`. Modifiers are Ctrl, Shift, A
 currency-rates = "Ctrl+F7"
 ```
 
-### niri: set up for you
+Changes apply the next time the game starts. An Action runs when you let go of its key, not when you press it. Holding the key runs it once.
 
-The first time the game starts under niri, the Route Panel asks whether to set the hotkeys up. **Set up** writes them to `~/.config/niri/poe-overlay.kdl` and adds one `include` line at the end of `config.kdl`; niri picks them up at once and keeps the key from reaching the game. **Not now** is remembered. After that, keys changed in `config.toml` are applied the next time the game starts.
+How it works: under Proton the game is an X11 window, so its keys pass through Xwayland. While the game has focus, the overlay grabs the hotkeys' keys there (an X11 key grab), and it lets them go when the game loses focus. This works on any compositor with Xwayland. A key your compositor binds never reaches Xwayland, so a compositor bind on the same key wins; pick another key if a hotkey does nothing. The Route Panel says so if a key isn't on your keyboard layout or another X11 program has grabbed it.
 
-A key you already use in your niri config is left to your bind (niri would otherwise let ours win silently); the Panel says where it's bound so you can pick another. An Action you bound to `poe-overlay trigger` yourself is left alone.
+### Without Xwayland
 
-From a terminal:
-
-- `poe-overlay setup hotkeys`: set them up now (also after "Not now").
-- `poe-overlay setup hotkeys --remove`: delete `poe-overlay.kdl` and the `include` line, and stop the game asking.
-
-To bind them yourself instead, add lines like this inside `binds { }` in your niri config; poe-overlay then leaves that Action alone:
+If the game runs as a native Wayland window (e.g. `PROTON_ENABLE_WAYLAND=1`), its keys never pass through Xwayland and the hotkeys do nothing. Bind keys in your compositor to `poe-overlay trigger <action>` instead, using the program's full path or a place on the session's PATH (`cargo install --path .` puts it in `~/.cargo/bin`). For niri:
 
 ```kdl
 Alt+R { spawn "poe-overlay" "trigger" "currency-rates"; }
 ```
-
-### Other compositors
-
-Bind each key to the trigger command yourself; the Route Panel and `poe-overlay setup hotkeys` show the commands. The compositor must find `poe-overlay`: use its full path, or install it where the session's PATH looks (`cargo install --path .` puts it in `~/.cargo/bin`).
 
 If no Overlay is running, the trigger exits with an error saying so.
 

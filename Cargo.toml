@@ -10,7 +10,6 @@ clap = { version = "4", features = ["derive"] }
 evdev = "0.13"
 gtk = { version = "0.11", package = "gtk4", features = ["v4_12"] }
 gtk4-layer-shell = "0.8"
-knuffel = { version = "3.2", default-features = false }
 libc = "0.2"
 rustix = { version = "1", features = ["process", "fs", "event", "pipe"] }
 serde = { version = "1.0.229", features = ["derive"] }
@@ -20,7 +19,7 @@ ureq = "3"
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
-x11rb = { version = "0.13", default-features = false }
+x11rb = { version = "0.13", default-features = false, features = ["xkb"] }
 xkbcommon = { version = "0.9", default-features = false }
 
 [dev-dependencies]
