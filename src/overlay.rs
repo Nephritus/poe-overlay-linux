@@ -3,13 +3,12 @@
 use std::os::fd::OwnedFd;
 use std::process::ExitCode;
 
+use gtk::glib;
 use gtk::prelude::*;
-use gtk::{gdk, glib};
-use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use rustix::event::{PollFd, PollFlags, poll};
 use rustix::process::{Pid, PidfdFlags, pidfd_open};
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::config::Config;
@@ -17,6 +16,7 @@ use crate::focus::Visibility;
 use crate::poe1::client_log;
 use crate::poe1::leveling::{Leveling, ProgressStore};
 use crate::poe1::route::Route;
+use crate::overlay_surface::{OverlaySurface, PanelKind};
 use crate::route_panel::{self, RoutePanel};
 use crate::{instance, log_follow, poe1, steam, toplevels};
 
@@ -85,20 +85,17 @@ fn activate(app: &gtk::Application, game_exited: async_channel::Receiver<()>) {
         });
     }
 
-    let window = overlay_window(app);
+    let overlay = OverlaySurface::new(app, &[route_panel::CSS]);
     let route_panel = RoutePanel::new();
-    let fixed = gtk::Fixed::new();
-    fixed.put(route_panel.widget(), PANEL_X, PANEL_Y);
-    window.set_child(Some(&fixed));
-    accept_input_only_on(&window, route_panel.widget().clone().upcast());
+    overlay.add_panel(route_panel.widget(), ROUTE_PANEL_X, ROUTE_PANEL_Y, PanelKind::Always);
     follow_route(route_panel);
 
     let changes = toplevels::watch();
     glib::spawn_future_local(async move {
         while let Ok(visibility) = changes.recv().await {
-            apply_visibility(&window, &visibility);
+            overlay.follow_game(&visibility);
         }
-        window.set_visible(false);
+        overlay.follow_game(&Visibility::Hidden);
     });
 }
 
@@ -156,92 +153,6 @@ fn show(panel: &RoutePanel, leveling: &Leveling) {
     panel.show(leveling.progress(), leveling.character());
 }
 
-// Route panel position, in surface-local logical pixels.
-const PANEL_X: f64 = 40.0;
-const PANEL_Y: f64 = 200.0;
-
-const CSS: &str = "
-window.poe-overlay { background: transparent; }
-.panel {
-  background: rgba(20, 20, 30, 0.8);
-  border: 1px solid rgb(204, 153, 51);
-  border-radius: 8px;
-  padding: 12px;
-  color: white;
-}
-";
-
-/// A full-screen, transparent, never-focused layer surface on the Overlay
-/// layer. Only panels accept pointer input; everything else passes through.
-fn overlay_window(app: &gtk::Application) -> gtk::ApplicationWindow {
-    let css = gtk::CssProvider::new();
-    css.load_from_string(&format!("{CSS}{}", route_panel::CSS));
-    gtk::style_context_add_provider_for_display(
-        &gdk::Display::default().expect("GDK display"),
-        &css,
-        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
-
-    let window = gtk::ApplicationWindow::new(app);
-    window.add_css_class("poe-overlay");
-    window.set_decorated(false);
-    window.init_layer_shell();
-    window.set_namespace(Some("poe-overlay"));
-    window.set_layer(Layer::Overlay);
-    window.set_keyboard_mode(KeyboardMode::None);
-    window.set_exclusive_zone(-1);
-    for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
-        window.set_anchor(edge, true);
-    }
-    window
-}
-
-/// Limits pointer input to `panel`'s current bounds, re-checked after every
-/// repaint because the panel resizes with its content.
-fn accept_input_only_on(window: &gtk::ApplicationWindow, panel: gtk::Widget) {
-    let window_ref = window.clone();
-    window.connect_realize(move |_| {
-        let surface = window_ref.surface().expect("realized window has a surface");
-        let applied = Cell::new(None);
-        let window = window_ref.clone();
-        let panel = panel.clone();
-        let update = move || {
-            let Some(bounds) = panel.compute_bounds(&window) else { return };
-            let rect = cairo::RectangleInt::new(
-                bounds.x().floor() as i32,
-                bounds.y().floor() as i32,
-                bounds.width().ceil() as i32,
-                bounds.height().ceil() as i32,
-            );
-            if applied.get() != Some(rect) {
-                surface.set_input_region(Some(&cairo::Region::create_rectangle(&rect)));
-                applied.set(Some(rect));
-            }
-        };
-        update();
-        window_ref.frame_clock().expect("realized window has a frame clock").connect_after_paint(move |_| update());
-    });
-}
-
-fn apply_visibility(window: &gtk::ApplicationWindow, visibility: &Visibility) {
-    let Visibility::Shown { output } = visibility else {
-        window.set_visible(false);
-        return;
-    };
-    let monitor = output.as_deref().and_then(monitor_named);
-    if window.is_visible() && window.monitor() == monitor {
-        return;
-    }
-    // A layer surface only moves to another output when remapped.
-    window.set_visible(false);
-    window.set_monitor(monitor.as_ref());
-    window.present();
-}
-
-fn monitor_named(connector: &str) -> Option<gdk::Monitor> {
-    gdk::Display::default()?
-        .monitors()
-        .iter::<gdk::Monitor>()
-        .flatten()
-        .find(|m| m.connector().as_deref() == Some(connector))
-}
+// Panel positions, in logical pixels from the output's top left.
+const ROUTE_PANEL_X: f64 = 40.0;
+const ROUTE_PANEL_Y: f64 = 200.0;

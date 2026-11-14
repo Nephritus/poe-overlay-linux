@@ -4,6 +4,7 @@ pub mod instance;
 pub mod launch;
 pub mod log_follow;
 pub mod overlay;
+mod overlay_surface;
 pub mod poe1;
 mod route_panel;
 pub mod steam;

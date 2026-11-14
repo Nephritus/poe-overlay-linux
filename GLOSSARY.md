@@ -12,6 +12,20 @@ _Avoid_: Zone, map, level
 One of the player's in-game characters, identified by its name; Route progress belongs to a Character.
 _Avoid_: Player, account, toon
 
+## Overlay
+
+**Overlay**:
+The always-on-top, see-through layer over the game window that holds Panels; it never takes keyboard focus and shows only while the game is focused.
+_Avoid_: Window, HUD, companion (the program as a whole)
+
+**Panel**:
+One box of content in the Overlay, shown or hidden on its own; only shown Panels catch clicks.
+_Avoid_: Widget, popup, card (reserved for Trade Request cards inside a Panel)
+
+**Action**:
+A request a hotkey sends to the running Overlay, such as toggling the Currency Rates Panel.
+_Avoid_: Command, trigger (the CLI verb that sends it), event
+
 ## Leveling
 
 **Route**:
