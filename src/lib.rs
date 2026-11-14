@@ -4,3 +4,4 @@ pub mod launch;
 pub mod overlay;
 pub mod poe1;
 pub mod toplevels;
+pub mod wine;

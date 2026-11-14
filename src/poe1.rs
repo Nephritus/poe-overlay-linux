@@ -1,5 +1,13 @@
 //! Path of Exile 1 specifics.
 
+/// Game executables of the Steam and standalone clients.
+pub const EXECUTABLES: &[&str] = &[
+    "PathOfExileSteam.exe",
+    "PathOfExile_x64Steam.exe",
+    "PathOfExile.exe",
+    "PathOfExile_x64.exe",
+];
+
 /// X11 window class Proton gives the game window: `steam_app_<Steam app ID>`.
 const STEAM_WINDOW_CLASS: &str = "steam_app_238960";
 

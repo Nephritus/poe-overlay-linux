@@ -156,3 +156,79 @@ fn launching_twice_runs_one_overlay() {
 
     assert_eq!(overlays.len(), 1, "overlays: {overlays:?}");
 }
+
+/// A Wine prefix holding only `user.reg`, as Wine writes its header.
+fn wine_prefix(root: &Path, extra: &str) -> std::path::PathBuf {
+    fs::create_dir_all(root).unwrap();
+    let reg = root.join("user.reg");
+    fs::write(
+        &reg,
+        format!(
+            "WINE REGISTRY Version 2\n;; All keys relative to REGISTRY\\\\User\\\\S-1-5-21-0-0-1000-1000\n\n#arch=win64\n\n[Control Panel\\\\Mouse] 1793987668\n#time=1dd6e17de477456\n\"MouseSpeed\"=\"1\"\n{extra}"
+        ),
+    )
+    .unwrap();
+    reg
+}
+
+const STEAM_EXE_KEY: &str = "[Software\\\\Wine\\\\AppDefaults\\\\PathOfExileSteam.exe\\\\X11 Driver]\n\"GrabPointer\"=\"N\"\n";
+
+#[test]
+fn steam_launch_stops_wine_locking_the_cursor_to_the_game() {
+    let launch = Launch::new();
+    let compat = tempfile::tempdir().unwrap();
+    let reg = wine_prefix(&compat.path().join("pfx"), "");
+
+    let out = launch.command(&["true"]).env("STEAM_COMPAT_DATA_PATH", compat.path()).output().unwrap();
+
+    assert!(out.status.success());
+    let reg = fs::read_to_string(reg).unwrap();
+    assert!(reg.contains(STEAM_EXE_KEY), "user.reg:\n{reg}");
+}
+
+#[test]
+fn registry_fix_keeps_existing_settings_and_is_not_repeated() {
+    let launch = Launch::new();
+    let prefix = tempfile::tempdir().unwrap();
+    let reg = wine_prefix(prefix.path(), "");
+    let before = fs::read_to_string(&reg).unwrap();
+
+    for _ in 0..2 {
+        launch.command(&["true"]).env("WINEPREFIX", prefix.path()).output().unwrap();
+    }
+
+    let after = fs::read_to_string(&reg).unwrap();
+    assert!(after.starts_with(&before), "existing content changed:\n{after}");
+    assert_eq!(after.matches(STEAM_EXE_KEY).count(), 1, "user.reg:\n{after}");
+}
+
+#[test]
+fn users_own_grab_pointer_choice_is_left_alone() {
+    let launch = Launch::new();
+    let prefix = tempfile::tempdir().unwrap();
+    let own = "\n[Software\\\\Wine\\\\AppDefaults\\\\PathOfExileSteam.exe\\\\X11 Driver] 1794497090\n#time=1dd6e17de477456\n\"GrabPointer\"=\"Y\"\n";
+    let reg = wine_prefix(prefix.path(), own);
+
+    launch.command(&["true"]).env("WINEPREFIX", prefix.path()).output().unwrap();
+
+    let after = fs::read_to_string(&reg).unwrap();
+    assert!(after.contains(own), "user's value changed:\n{after}");
+    assert!(!after.contains("PathOfExileSteam.exe\\\\X11 Driver]\n\"GrabPointer\"=\"N\""), "user.reg:\n{after}");
+}
+
+#[test]
+fn registry_fix_joins_an_existing_section_for_the_game() {
+    let launch = Launch::new();
+    let prefix = tempfile::tempdir().unwrap();
+    let section = "\n[Software\\\\Wine\\\\AppDefaults\\\\PathOfExileSteam.exe\\\\X11 Driver] 1794497090\n#time=1dd6e17de477456\n\"UseTakeFocus\"=\"N\"\n";
+    let reg = wine_prefix(prefix.path(), section);
+
+    launch.command(&["true"]).env("WINEPREFIX", prefix.path()).output().unwrap();
+
+    let after = fs::read_to_string(&reg).unwrap();
+    assert!(
+        after.contains("PathOfExileSteam.exe\\\\X11 Driver] 1794497090\n#time=1dd6e17de477456\n\"GrabPointer\"=\"N\"\n\"UseTakeFocus\"=\"N\"\n"),
+        "user.reg:\n{after}"
+    );
+    assert_eq!(after.matches("PathOfExileSteam.exe\\\\X11 Driver]").count(), 1);
+}

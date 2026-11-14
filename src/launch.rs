@@ -5,10 +5,18 @@ use std::io;
 use std::os::unix::process::CommandExt;
 use std::process::{Command, ExitCode, Stdio};
 
-/// Starts the overlay, then replaces this process with the game so Steam sees
-/// the game's own PID, arguments, environment and exit status. The overlay
-/// follows that PID and exits with the game. Returns only if exec fails.
+use crate::{poe1, wine};
+
+/// Prepares the game's Wine prefix and starts the overlay, then replaces this
+/// process with the game so Steam sees the game's own PID, arguments,
+/// environment and exit status. The overlay follows that PID and exits with
+/// the game. Returns only if exec fails.
 pub fn run(game: &[OsString]) -> ExitCode {
+    if let Some(prefix) = wine::prefix_from_env()
+        && let Err(err) = wine::keep_cursor_unlocked(&prefix, poe1::EXECUTABLES)
+    {
+        eprintln!("poe-overlay: cursor lock fix not applied to {}: {err}", prefix.display());
+    }
     if let Err(err) = spawn_overlay(std::process::id()) {
         eprintln!("poe-overlay: overlay not started: {err}");
     }

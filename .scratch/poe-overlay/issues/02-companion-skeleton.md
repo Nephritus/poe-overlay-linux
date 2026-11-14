@@ -31,10 +31,10 @@ The code is on `main`. The automated tests cover the three ticked items:
 |---|---|---|
 | Panel appears | The "PoE Overlay" panel shows at the left while PoE is focused | Pass (user, 2026-11-14) |
 | Window identity | `niri msg focused-window` on PoE shows app_id `steam_app_238960` (title "Path of Exile" also matches) | |
-| Alt+Tab | Switching away hides the panel; switching back shows it, with no black screen or flicker | |
-| Focus kept | Clicking the panel leaves PoE focused, and game keys still work | |
-| Click-through | Clicking next to the panel reaches the game | |
-| Exit with game | After quitting PoE, `pgrep -af "poe-overlay overlay"` prints nothing and Steam shows the game as stopped | |
+| Alt+Tab | Switching away hides the panel; switching back shows it, with no black screen or flicker || Pass (user, 2026-11-14) |
+| Focus kept | Clicking the panel leaves PoE focused, and game keys still work || Pass (user, 2026-11-14) |
+| Click-through | Clicking next to the panel reaches the game || Pass (user, 2026-11-14) |
+| Exit with game | After quitting PoE, `pgrep -af "poe-overlay overlay"` prints nothing and Steam shows the game as stopped || Pass (user, 2026-11-14) |
 | Game's monitor | Multi-monitor only: the panel shows on PoE's monitor | n/a (single screen) |
 
 ### In-game notes (2026-11-14)
@@ -44,3 +44,11 @@ The code is on `main`. The automated tests cover the three ticked items:
   - Likely cause (not confirmed): while a button is held, the game locks the pointer to its window, and niri won't let a locked pointer move onto another surface.
   - Harmless, since panels can't be clicked mid-action anyway.
   - If the cursor is blocked with no buttons held, it's a different problem. The candidate fix is Wine's X11 `GrabPointer=N` in the game's Proton prefix.
+
+### Cursor lock: root cause and fix (2026-11-14)
+
+The panel became unreachable after the first click in game, until Alt+Tab.
+- **Evidence:** a Proton log with `WINEDEBUG=+timestamp,+cursor` showed `grab_clipping_window clipping to (0,0)-(1920,1080)` on a ButtonPress. The lock was not released on ButtonRelease; `ungrab_clipping_window` came only at the next focus change.
+- **Cause:** Wine's `clip_fullscreen_window` (`win32u/input.c`) locks the cursor to a full-screen foreground window when the monitor is the whole virtual screen (single monitor), independent of the game's `confine_mouse_to_window`. Xwayland turns that into a pointer confinement, and niri keeps a confined pointer out of other surfaces, including the overlay panel.
+- **Fix:** `launch` sets `"GrabPointer"="N"` under `AppDefaults\<PoE exe>\X11 Driver` in the prefix found from `WINEPREFIX` or `STEAM_COMPAT_DATA_PATH`, before the game starts. It keeps a one-time backup and never changes an existing value, so a user who sets `"Y"` has opted out. Tests are in `tests/launch.rs`.
+- **Pending:** an in-game confirmation that the panel stays reachable after clicking in game.
