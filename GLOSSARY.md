@@ -26,6 +26,10 @@ _Avoid_: Widget, popup, card (reserved for Trade Request cards inside a Panel)
 A request a hotkey sends to the running Overlay, such as toggling the Currency Rates Panel.
 _Avoid_: Command, trigger (the CLI verb that sends it), event
 
+**Hotkey**:
+A key combination, chosen in `[hotkeys]`, that the compositor turns into an Action; the overlay can't see keys pressed in the game itself.
+_Avoid_: Shortcut, keybind (the compositor's own entry), macro
+
 ## Leveling
 
 **Route**:

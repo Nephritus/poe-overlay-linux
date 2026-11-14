@@ -12,9 +12,14 @@ pub const CSS: &str = "
 .route-sub-step { font-size: smaller; color: rgb(190, 190, 200); margin-left: 12px; }
 .route-note { font-size: smaller; color: rgb(230, 120, 100); }
 .route-off { font-size: smaller; font-style: italic; color: rgb(160, 160, 170); }
+.route-prompt { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(204, 153, 51, 0.5); }
+.route-prompt-text { font-size: smaller; }
 ";
 
 const WIDTH: i32 = 340;
+
+/// What a prompt button does when clicked.
+pub type PromptClick = Box<dyn Fn(&RoutePanel)>;
 
 /// Widgets are reference-counted, so clones share the same panel.
 #[derive(Clone)]
@@ -27,6 +32,8 @@ pub struct RoutePanel {
     off_route: gtk::Label,
     steps: gtk::Box,
     note: gtk::Label,
+    /// A question with buttons, below everything else; hidden when empty.
+    prompt: gtk::Box,
 }
 
 impl RoutePanel {
@@ -49,12 +56,16 @@ impl RoutePanel {
         let steps = gtk::Box::new(gtk::Orientation::Vertical, 2);
         let note = label("", "route-note");
         note.set_visible(false);
+        let prompt = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        prompt.add_css_class("route-prompt");
+        prompt.set_visible(false);
         root.append(&header);
         root.append(&character);
         root.append(&off_route);
         root.append(&steps);
         root.append(&note);
-        Self { root, area, character, previous, next, off_route, steps, note }
+        root.append(&prompt);
+        Self { root, area, character, previous, next, off_route, steps, note, prompt }
     }
 
     pub fn widget(&self) -> &gtk::Box {
@@ -101,6 +112,30 @@ impl RoutePanel {
         };
         self.note.set_label(&label);
         self.note.set_visible(true);
+    }
+
+    /// Shows `text` with a row of buttons, replacing any earlier prompt. Each
+    /// button's click handler runs with this panel and should end with
+    /// [`RoutePanel::ask`] again or [`RoutePanel::clear_prompt`].
+    pub fn ask(&self, text: &str, buttons: Vec<(&str, PromptClick)>) {
+        self.clear_prompt();
+        self.prompt.append(&label(text, "route-prompt-text"));
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        for (text, action) in buttons {
+            let button = gtk::Button::builder().label(text).focusable(false).focus_on_click(false).build();
+            let panel = self.clone();
+            button.connect_clicked(move |_| action(&panel));
+            row.append(&button);
+        }
+        self.prompt.append(&row);
+        self.prompt.set_visible(true);
+    }
+
+    pub fn clear_prompt(&self) {
+        while let Some(child) = self.prompt.first_child() {
+            self.prompt.remove(&child);
+        }
+        self.prompt.set_visible(false);
     }
 }
 

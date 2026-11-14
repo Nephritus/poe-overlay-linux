@@ -27,8 +27,15 @@ pub enum Action {
 
 impl Action {
     /// The name on the command line, also used on the socket.
-    fn name(self) -> String {
+    pub fn name(self) -> String {
         self.to_possible_value().expect("no skipped Actions").get_name().to_owned()
+    }
+
+    /// What the player sees, e.g. in a compositor's list of hotkeys.
+    pub fn title(self) -> &'static str {
+        match self {
+            Action::CurrencyRates => "Currency Rates",
+        }
     }
 }
 

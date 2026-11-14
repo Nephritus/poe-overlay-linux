@@ -9,6 +9,7 @@ use rustix::event::{PollFd, PollFlags, poll};
 use rustix::process::{Pid, PidfdFlags, pidfd_open};
 
 use std::cell::RefCell;
+use std::fmt::Write as _;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -17,11 +18,12 @@ use crate::currency_panel::{self, CurrencyPanel};
 use crate::http::Http;
 use crate::poe1::prices::PriceSource;
 use crate::focus::Visibility;
+use crate::hotkeys::{HotkeySetup, Hotkeys, LaunchPrompt};
 use crate::poe1::client_log;
 use crate::poe1::leveling::{Leveling, ProgressStore};
 use crate::poe1::route::Route;
 use crate::overlay_surface::{OverlaySurface, PanelKind};
-use crate::route_panel::{self, RoutePanel};
+use crate::route_panel::{self, PromptClick, RoutePanel};
 use crate::running::{Action, RunningOverlay};
 use crate::{log_follow, poe1, steam, toplevels};
 
@@ -94,14 +96,21 @@ fn activate(app: &gtk::Application, game_exited: async_channel::Receiver<()>, ac
     let overlay = OverlaySurface::new(app, &[route_panel::CSS, currency_panel::CSS]);
     let route_panel = RoutePanel::new();
     overlay.add_panel(route_panel.widget(), ROUTE_PANEL_X, ROUTE_PANEL_Y, PanelKind::Always);
-    let config = Config::load().unwrap_or_else(|err| {
-        eprintln!("poe-overlay: {err}; using defaults");
-        route_panel.set_note(&format!("Settings file has a mistake, using defaults: {err}"));
-        Config::default()
-    });
+    let (config, config_ok) = match Config::load() {
+        Ok(config) => (config, true),
+        Err(err) => {
+            eprintln!("poe-overlay: {err}; using defaults");
+            route_panel.set_note(&format!("Settings file has a mistake, using defaults: {err}"));
+            (Config::default(), false)
+        }
+    };
     let currency_panel = CurrencyPanel::new();
     overlay.add_panel(currency_panel.widget(), CURRENCY_PANEL_X, CURRENCY_PANEL_Y, PanelKind::Toggled);
-    follow_route(route_panel, &config);
+    follow_route(route_panel.clone(), &config);
+    // Default keys mustn't overwrite the player's while the file is broken.
+    if config_ok {
+        prompt_hotkeys(&route_panel, config.hotkeys);
+    }
     take_actions(actions, overlay.clone(), currency_panel, config.prices.league);
 
     let changes = toplevels::watch();
@@ -156,6 +165,62 @@ fn follow_route(panel: RoutePanel, config: &Config) {
             }
         }
     });
+}
+
+/// On the first start, asks on the Route Panel to bind the hotkeys in the
+/// compositor; later starts keep them in line with `[hotkeys]`.
+fn prompt_hotkeys(panel: &RoutePanel, hotkeys: Hotkeys) {
+    let setup = match HotkeySetup::for_session(hotkeys) {
+        Ok(setup) => Rc::new(setup),
+        Err(err) => {
+            eprintln!("poe-overlay: hotkeys not set up: cannot find this program's path: {err}");
+            return;
+        }
+    };
+    let decline = |setup: Rc<HotkeySetup>| -> PromptClick {
+        Box::new(move |panel| {
+            if let Err(err) = setup.decline() {
+                eprintln!("poe-overlay: cannot save the hotkey answer: {err}");
+            }
+            panel.clear_prompt();
+        })
+    };
+    match setup.at_launch() {
+        LaunchPrompt::Nothing => {}
+        LaunchPrompt::Failed(err) => panel.set_note(&format!("Hotkeys: {err}")),
+        LaunchPrompt::Manual => {
+            let text = format!("Hotkeys: {}", setup.manual_instructions());
+            panel.ask(&text, vec![("Got it", decline(setup))]);
+        }
+        LaunchPrompt::Conflicts(plan) => panel.set_note(&plan.taken_text()),
+        LaunchPrompt::Ask(plan) => {
+            let mut text = String::from("Set up hotkeys in niri?");
+            for planned in plan.to_bind() {
+                let _ = write!(text, "\n{}: {}", planned.key, planned.action.title());
+            }
+            let taken = plan.taken_text();
+            if !taken.is_empty() {
+                text.push('\n');
+                text.push_str(&taken);
+            }
+            let mut buttons = Vec::with_capacity(2);
+            if plan.to_bind().next().is_some() {
+                let set_up = setup.clone();
+                buttons.push((
+                    "Set up",
+                    Box::new(move |panel: &RoutePanel| match set_up.set_up() {
+                        Ok(_) => panel.ask("Hotkeys set up; change them under [hotkeys] in config.toml.", vec![("OK", Box::new(RoutePanel::clear_prompt))]),
+                        Err(err) => {
+                            panel.clear_prompt();
+                            panel.set_note(&format!("Hotkeys not set up: {err}"));
+                        }
+                    }) as PromptClick,
+                ));
+            }
+            buttons.push(("Not now", decline(setup)));
+            panel.ask(&text, buttons);
+        }
+    }
 }
 
 fn show(panel: &RoutePanel, leveling: &Leveling) {

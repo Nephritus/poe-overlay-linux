@@ -31,8 +31,24 @@ enum Commands {
         #[arg(value_enum)]
         action: poe_overlay::running::Action,
     },
+    /// Puts things into your desktop's own config.
+    Setup {
+        #[command(subcommand)]
+        what: Setup,
+    },
     /// Shows credits and licenses for bundled third-party data.
     Credits,
+}
+
+#[derive(Subcommand)]
+enum Setup {
+    /// Binds the keys from [hotkeys] in config.toml in your compositor's
+    /// config (niri); the game also asks to do this on its first start.
+    Hotkeys {
+        /// Take poe-overlay's binds out again, and stop the game asking.
+        #[arg(long)]
+        remove: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -46,6 +62,7 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Commands::Setup { what: Setup::Hotkeys { remove } } => poe_overlay::hotkeys::run_setup(remove),
         Commands::Credits => {
             print!("{}", poe_overlay::poe1::route::CREDITS);
             ExitCode::SUCCESS

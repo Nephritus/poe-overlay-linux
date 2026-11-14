@@ -15,13 +15,34 @@ Decisions from the design discussion (2026-11-14):
 
 **Blocked by:** 06 (Currency Rates panel toggled by hotkey)
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] `[hotkeys]` in config.toml maps each Action to a key (default `currency-rates = "Alt+R"`); invalid keys or unknown Actions are reported like other config mistakes
-- [ ] On first launch under niri with hotkeys not yet set up, the Route Panel offers setup; "Set up" installs them and "Not now" dismisses them, and both answers are remembered across restarts
-- [ ] Setup writes `poe-overlay.kdl` and adds exactly one `include` line to `config.kdl` (idempotent); niri's config stays valid (`niri validate`) and the bind works without restarting niri
-- [ ] A key already bound in the player's niri config (including included files) is not installed; the Panel and the CLI name the conflict and point to `[hotkeys]`
-- [ ] `poe-overlay setup hotkeys` and `--remove` work from a terminal; `--remove` leaves the rest of the config byte-for-byte unchanged
-- [ ] Under an unknown compositor, the Panel line and the CLI show the `poe-overlay trigger …` command to bind by hand instead of offering setup
-- [ ] README explains first-launch setup, `[hotkeys]`, `setup hotkeys` and `--remove`; the manual niri snippet stays as the fallback
-- [ ] The current hand-written `Alt+R` line in the user's `~/.config/niri/cfg/keybinds.kdl` (added 2026-11-14) is moved into the generated file, so it isn't bound twice
+- [x] `[hotkeys]` in config.toml maps each Action to a key (default `currency-rates = "Alt+R"`); invalid keys or unknown Actions are reported like other config mistakes
+- [x] On first launch under niri with hotkeys not yet set up, the Route Panel offers setup; "Set up" installs them and "Not now" dismisses them, and both answers are remembered across restarts
+- [x] Setup writes `poe-overlay.kdl` and adds exactly one `include` line to `config.kdl` (idempotent); niri's config stays valid (`niri validate`) and the bind works without restarting niri
+- [x] A key already bound in the player's niri config (including included files) is not installed; the Panel and the CLI name the conflict and point to `[hotkeys]`
+- [x] `poe-overlay setup hotkeys` and `--remove` work from a terminal; `--remove` leaves the rest of the config byte-for-byte unchanged
+- [x] Under an unknown compositor, the Panel line and the CLI show the `poe-overlay trigger …` command to bind by hand instead of offering setup
+- [x] README explains first-launch setup, `[hotkeys]`, `setup hotkeys` and `--remove`; the manual niri snippet stays as the fallback
+- [x] The current hand-written `Alt+R` line in the user's `~/.config/niri/cfg/keybinds.kdl` (added 2026-11-14) is moved into the generated file, so it isn't bound twice
+
+## Comments
+
+### Implemented (agent, 2026-11-15)
+
+- **Reading the player's niri config:** uses `knuffel`, the KDL parser niri itself uses, and follows `include`s the way niri resolves them (relative to the including file, `~` expanded). Key names are matched like niri: modifiers in any order, keysym looked up case-insensitively through xkbcommon, `Mod` read as Super. Commented-out binds (`//`, `/* */`, `/-`) don't count.
+- **Our include is `include optional=true "./poe-overlay.kdl"`**, so niri still loads if our file is ever deleted; without `optional=true`, a missing include makes niri reject the whole config (checked with `niri validate` on 26.04). It's appended to `config.kdl` with a comment and removed verbatim. If the player edited that line, `--remove` leaves both the line and our file and says so, rather than leave niri pointing at a missing file. Writes are atomic, and a symlinked `config.kdl` (dotfile managers) stays a symlink.
+- **Answers** are kept per compositor in `$XDG_STATE_HOME/poe-overlay/hotkeys.toml`, so dismissing the by-hand commands once (e.g. a launch without `NIRI_SOCKET`) doesn't hide the niri question. "Set up" is remembered by the include itself.
+- **After set-up**, each launch rewrites `poe-overlay.kdl` from `[hotkeys]` if it changed, and drops a key the player has since bound themselves (niri would otherwise let ours win silently), with a note naming where. A broken `config.toml` skips this, so the defaults never overwrite the player's keys.
+- **Binds run the program by full path** (`$APPIMAGE` for an AppImage), so niri's PATH doesn't matter.
+- **Beyond the ticket, small:** `poe-overlay setup hotkeys --remove` works with a broken `config.toml`; an Action bound by hand to `poe-overlay trigger` (also via `spawn-sh`) counts as done; `""` leaves an Action without a hotkey. Shared `xdg` and `files` modules replace three copies of XDG lookups and the progress store's own atomic write.
+- **Checked live:** on a copy of the real niri config, setup found the hand bind (`cfg/keybinds.kdl line 160`), bound Alt+R once it was gone, reported a conflicting `Alt+R { spawn "firefox"; }` with its line, and `--remove` restored `config.kdl` byte-for-byte; `niri validate` passed. The Route Panel showed the "Set up hotkeys in niri? / Alt+R: Currency Rates / [Set up] [Not now]" row over a stand-in game window. The user's own hand bind was then replaced by `poe-overlay setup hotkeys`.
+
+**Needs an in-game check (human):**
+
+| Check | Pass when | Result |
+|---|---|---|
+| Alt+R | Still toggles the Currency Rates Panel in game (now from `poe-overlay.kdl`) | |
+| Set up button | After `poe-overlay setup hotkeys --remove && rm ~/.local/state/poe-overlay/hotkeys.toml`, starting the game asks; clicking **Set up** shows "Hotkeys set up" and Alt+R works without restarting niri | |
+| Not now | Clicking **Not now** hides the row and it doesn't come back next start | |
+| Changed key | Set `currency-rates = "Ctrl+F7"` in `config.toml`, restart the game: Ctrl+F7 toggles the Panel, Alt+R no longer does | |

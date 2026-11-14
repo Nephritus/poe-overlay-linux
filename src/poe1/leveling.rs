@@ -43,12 +43,7 @@ impl ProgressStore {
     /// Default location: `$XDG_STATE_HOME/poe-overlay/progress.toml`, else
     /// `~/.local/state/…`; the temp directory only if `HOME` is unset.
     pub fn default_path() -> PathBuf {
-        let dir = std::env::var_os("XDG_STATE_HOME")
-            .map(PathBuf::from)
-            .filter(|d| d.is_absolute())
-            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
-            .unwrap_or_else(std::env::temp_dir);
-        dir.join("poe-overlay/progress.toml")
+        crate::xdg::state_home().unwrap_or_else(std::env::temp_dir).join("poe-overlay/progress.toml")
     }
 
     /// Loads `path`; a missing file is an empty store. A file that isn't
@@ -116,13 +111,8 @@ impl ProgressStore {
 
     /// Writes the whole file atomically (temporary file, then rename).
     fn save(&self) -> std::io::Result<()> {
-        if let Some(dir) = self.path.parent() {
-            fs::create_dir_all(dir)?;
-        }
         let text = toml::to_string(&StoreFileRef { characters: &self.characters }).map_err(std::io::Error::other)?;
-        let tmp = self.path.with_extension("toml.tmp");
-        fs::write(&tmp, text)?;
-        fs::rename(&tmp, &self.path)
+        crate::files::write_atomic(&self.path, &text)
     }
 }
 

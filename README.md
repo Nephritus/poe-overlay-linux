@@ -34,19 +34,39 @@ To opt out, set `"GrabPointer"="Y"` in that section. `launch` never changes a va
 
 ## Hotkeys
 
-Hotkeys are keybinds in your compositor that run `poe-overlay trigger <action>`. The running Overlay carries out the action while the game is focused. Actions:
+Hotkeys are keybinds in your compositor that run `poe-overlay trigger <action>`. The running Overlay carries out the action while the game is focused. Actions and their default keys:
 
-- `currency-rates`: show or hide the Currency Rates Panel.
+- `currency-rates` (Alt+R): show or hide the Currency Rates Panel.
 
-The compositor must find `poe-overlay`: install it with `cargo install --path .` (to `~/.cargo/bin`, which is usually on the session's PATH) or use the full path to the binary in the bind.
+Choose keys in `~/.config/poe-overlay/config.toml`. Modifiers are Ctrl, Shift, Alt and Super; keys are XKB key names such as `R`, `F5` or `Return`. `""` leaves an Action without a hotkey:
 
-niri (`~/.config/niri/config.kdl`, inside `binds { }`). niri keeps the key from reaching the game:
+```toml
+[hotkeys]
+currency-rates = "Ctrl+F7"
+```
+
+### niri: set up for you
+
+The first time the game starts under niri, the Route Panel asks whether to set the hotkeys up. **Set up** writes them to `~/.config/niri/poe-overlay.kdl` and adds one `include` line at the end of `config.kdl`; niri picks them up at once and keeps the key from reaching the game. **Not now** is remembered. After that, keys changed in `config.toml` are applied the next time the game starts.
+
+A key you already use in your niri config is left to your bind (niri would otherwise let ours win silently); the Panel says where it's bound so you can pick another. An Action you bound to `poe-overlay trigger` yourself is left alone.
+
+From a terminal:
+
+- `poe-overlay setup hotkeys`: set them up now (also after "Not now").
+- `poe-overlay setup hotkeys --remove`: delete `poe-overlay.kdl` and the `include` line, and stop the game asking.
+
+To bind them yourself instead, add lines like this inside `binds { }` in your niri config; poe-overlay then leaves that Action alone:
 
 ```kdl
 Alt+R { spawn "poe-overlay" "trigger" "currency-rates"; }
 ```
 
-If no Overlay is running, the command exits with an error saying so.
+### Other compositors
+
+Bind each key to the trigger command yourself; the Route Panel and `poe-overlay setup hotkeys` show the commands. The compositor must find `poe-overlay`: use its full path, or install it where the session's PATH looks (`cargo install --path .` puts it in `~/.cargo/bin`).
+
+If no Overlay is running, the trigger exits with an error saying so.
 
 ## Currency Rates
 

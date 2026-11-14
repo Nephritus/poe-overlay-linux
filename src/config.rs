@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 
+use crate::hotkeys::Hotkeys;
 use crate::poe1::route::RouteOptions;
 
 #[derive(Debug, Default, Deserialize)]
@@ -12,6 +13,7 @@ use crate::poe1::route::RouteOptions;
 pub struct Config {
     pub route: RouteOptions,
     pub prices: PricesConfig,
+    pub hotkeys: Hotkeys,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -37,11 +39,7 @@ impl Config {
     }
 }
 
-fn path() -> Option<PathBuf> {
-    // The XDG spec says to ignore a relative XDG_CONFIG_HOME.
-    let dir = match std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).filter(|d| d.is_absolute()) {
-        Some(dir) => dir,
-        None => PathBuf::from(std::env::var_os("HOME")?).join(".config"),
-    };
-    Some(dir.join("poe-overlay/config.toml"))
+/// Where the config file is; `None` without `HOME`.
+pub fn path() -> Option<PathBuf> {
+    Some(crate::xdg::config_home()?.join("poe-overlay/config.toml"))
 }

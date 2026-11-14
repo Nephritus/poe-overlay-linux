@@ -1,6 +1,8 @@
 pub mod config;
 mod currency_panel;
 pub mod focus;
+mod files;
+pub mod hotkeys;
 pub mod http;
 pub mod launch;
 pub mod log_follow;
@@ -12,3 +14,4 @@ pub mod running;
 pub mod steam;
 pub mod toplevels;
 pub mod wine;
+mod xdg;
