@@ -29,10 +29,18 @@ The code is on `main`. The automated tests cover the three ticked items:
 
 | Check | Pass when | Result |
 |---|---|---|
-| Panel appears | The "PoE Overlay" panel shows at the left while PoE is focused | |
+| Panel appears | The "PoE Overlay" panel shows at the left while PoE is focused | Pass (user, 2026-11-14) |
 | Window identity | `niri msg focused-window` on PoE shows app_id `steam_app_238960` (title "Path of Exile" also matches) | |
 | Alt+Tab | Switching away hides the panel; switching back shows it, with no black screen or flicker | |
 | Focus kept | Clicking the panel leaves PoE focused, and game keys still work | |
 | Click-through | Clicking next to the panel reaches the game | |
 | Exit with game | After quitting PoE, `pgrep -af "poe-overlay overlay"` prints nothing and Steam shows the game as stopped | |
 | Game's monitor | Multi-monitor only: the panel shows on PoE's monitor | n/a (single screen) |
+
+### In-game notes (2026-11-14)
+
+- **Starting from Steam:** works when the launch option resolves to the binary. A bare `poe-overlay` needs the program on Steam's PATH, which includes `~/.cargo/bin` (e.g. after `cargo install --path .`). Otherwise Steam logs `/bin/sh: poe-overlay: command not found` and the game doesn't start.
+- **Cursor blocked during actions:** while a mouse button is held for an in-game action, the cursor sometimes stops at the panel's edge. The PoE config has `confine_mouse_to_window=false`, and the cursor enters the panel normally once no button is held.
+  - Likely cause (not confirmed): while a button is held, the game locks the pointer to its window, and niri won't let a locked pointer move onto another surface.
+  - Harmless, since panels can't be clicked mid-action anyway.
+  - If the cursor is blocked with no buttons held, it's a different problem. The candidate fix is Wine's X11 `GrabPointer=N` in the game's Proton prefix.
