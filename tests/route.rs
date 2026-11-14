@@ -66,10 +66,10 @@ fn same_named_area_in_another_act_is_not_mistaken_for_it() {
     walk(&mut progress, &["1_1_town", "1_1_2"]);
 
     // Act 6's Lioneye's Watch, not Act 1's (1_1_town).
-    let changed = progress.enter_area("2_6_town");
+    progress.enter_area("2_6_town");
 
-    assert!(!changed);
     assert_eq!(progress.area_name(), "The Coast");
+    assert_eq!(texts(progress.steps()), ["Get Waypoint", "➞ The Mud Flats"]);
 }
 
 #[test]
@@ -105,9 +105,8 @@ fn area_outside_the_route_keeps_the_current_steps() {
     let mut progress = league_start();
     walk(&mut progress, &["1_1_town"]);
 
-    let changed = progress.enter_area("HideoutLuxurious");
+    progress.enter_area("HideoutLuxurious");
 
-    assert!(!changed);
     assert_eq!(texts(progress.steps()), ["Hand in Enemy at the Gate", "➞ The Coast"]);
 }
 
@@ -134,4 +133,41 @@ fn logging_in_again_to_the_same_area_keeps_its_steps() {
 
     assert!(!changed);
     assert_eq!(texts(progress.steps()), ["Hand in Enemy at the Gate", "➞ The Coast"]);
+}
+
+#[test]
+fn side_area_off_the_route_is_reported_and_keeps_the_last_steps() {
+    let mut progress = league_start();
+    walk(&mut progress, &["1_1_town", "1_1_2", "1_1_3"]);
+
+    progress.enter_area("1_1_3a");
+
+    assert!(progress.is_off_route());
+    assert_eq!(progress.character_area_name(), Some("The Fetid Pool"));
+    assert_eq!(texts(progress.steps()), ["Find 3x Glyph", "➞ The Submerged Passage"]);
+
+    progress.enter_area("1_1_3");
+    assert!(!progress.is_off_route());
+}
+
+#[test]
+fn hideout_is_off_the_route_without_a_name() {
+    let mut progress = league_start();
+
+    progress.enter_area("HideoutLuxurious");
+
+    assert!(progress.is_off_route());
+    assert_eq!(progress.character_area_name(), None);
+}
+
+#[test]
+fn town_trip_returns_to_the_visit_it_left_even_when_a_later_visit_is_nearer() {
+    let mut progress = league_start();
+    walk(&mut progress, &["1_1_town", "1_1_2", "1_1_3", "1_1_4_1"]);
+    assert_eq!(texts(progress.steps()), ["Waypoint ➞ The Coast"]);
+
+    // Selling in town, then back by waypoint.
+    walk(&mut progress, &["1_1_town", "1_1_4_1"]);
+
+    assert_eq!(texts(progress.steps()), ["Waypoint ➞ The Coast"]);
 }

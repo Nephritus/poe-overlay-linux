@@ -9,6 +9,7 @@ pub const CSS: &str = "
 .route-step { margin-top: 2px; }
 .route-sub-step { font-size: smaller; color: rgb(190, 190, 200); margin-left: 12px; }
 .route-note { font-size: smaller; color: rgb(230, 120, 100); }
+.route-off { font-size: smaller; font-style: italic; color: rgb(160, 160, 170); }
 ";
 
 const WIDTH: i32 = 340;
@@ -16,6 +17,7 @@ const WIDTH: i32 = 340;
 pub struct RoutePanel {
     root: gtk::Box,
     area: gtk::Label,
+    off_route: gtk::Label,
     steps: gtk::Box,
     note: gtk::Label,
 }
@@ -26,13 +28,15 @@ impl RoutePanel {
         root.add_css_class("panel");
         root.set_size_request(WIDTH, -1);
         let area = label("", "route-area");
+        let off_route = label("", "route-off");
         let steps = gtk::Box::new(gtk::Orientation::Vertical, 2);
         let note = label("", "route-note");
         note.set_visible(false);
         root.append(&area);
+        root.append(&off_route);
         root.append(&steps);
         root.append(&note);
-        Self { root, area, steps, note }
+        Self { root, area, off_route, steps, note }
     }
 
     pub fn widget(&self) -> &gtk::Box {
@@ -41,6 +45,11 @@ impl RoutePanel {
 
     pub fn show(&self, progress: &RouteProgress) {
         self.area.set_label(progress.area_name());
+        self.off_route.set_visible(progress.is_off_route());
+        self.off_route.set_label(&match progress.character_area_name() {
+            Some(name) if progress.is_off_route() => format!("You're in {name}, which the Route doesn't visit."),
+            _ => "You're off the Route.".into(),
+        });
         while let Some(child) = self.steps.first_child() {
             self.steps.remove(&child);
         }

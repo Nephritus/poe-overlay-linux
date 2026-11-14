@@ -10,3 +10,9 @@
 - [ ] League-start variant is selectable and changes the Steps shown where the data differs
 - [ ] exile-leveling copyright notice ships with the program
 - [ ] Entering an Area in a later act (e.g. Act 6 coast) shows that act's Steps, not Act 1's
+
+## Comments
+
+### Note from ticket 03 (agent, 2026-11-14)
+
+The Route parser understands only the fragments Act 1 uses. Acts 2–10 (exile-leveling `d6951db`) also use `{portal|set}` / `{portal|use}` (9×), `{crafting}` (47×) and `{ascend}` (3×). `{portal|use}` must move the simulated Area the way exile-leveling does, or Steps will be grouped under the wrong Area.

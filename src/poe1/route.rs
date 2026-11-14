@@ -3,9 +3,11 @@
 //!
 //! Route lines are Steps such as `➞ {enter|1_1_town} #Lioneye's Watch`;
 //! `{…}` fragments name game things by ID, `#…` ends the line as a comment,
-//! `#sub` lines annotate the previous Step and `#ifdef`/`#ifndef`/`#endif`
-//! select variants. The Character's Area is simulated from the start Area:
-//! `enter` and `waypoint` move it, `logout` returns to the last town.
+//! `#sub` lines add Sub-steps to the previous Step and
+//! `#ifdef`/`#ifndef`/`#endif` select variants. The Character's Area is
+//! simulated from the start Area: `enter` and `waypoint` move it, `logout`
+//! returns to the last town. Only the fragments Act 1 uses are understood;
+//! others render their argument as text.
 
 use std::collections::HashMap;
 
@@ -103,12 +105,12 @@ impl Parser<'_> {
                 continue;
             }
             // A Step belongs to the Area the Character is in before doing it.
-            let area_before = self.area.clone();
-            let step = Step { text: self.render(line), sub_steps: Vec::new() };
-            match legs.last_mut() {
-                Some(leg) if leg.area_id == area_before => leg.steps.push(step),
-                _ => legs.push(Leg { area_id: area_before, steps: vec![step] }),
+            let new_leg = legs.last().is_none_or(|leg| leg.area_id != self.area);
+            if new_leg {
+                legs.push(Leg { area_id: self.area.clone(), steps: Vec::new() });
             }
+            let step = Step { text: self.render(line), sub_steps: Vec::new() };
+            legs.last_mut().expect("pushed above").steps.push(step);
         }
         legs
     }
@@ -125,55 +127,57 @@ impl Parser<'_> {
                 break;
             }
             let Some(end) = rest[i..].find('}') else { break };
-            let text = self.fragment(&rest[i + 1..i + end]);
+            let start = out.len();
+            self.fragment(&rest[i + 1..i + end], &mut out);
             // `3x{quest_text|Glyph}` reads "3x Glyph" as plain text.
-            if out.ends_with(char::is_alphanumeric) && text.starts_with(char::is_alphanumeric) {
-                out.push(' ');
+            if out[..start].ends_with(char::is_alphanumeric) && out[start..].starts_with(char::is_alphanumeric) {
+                out.insert(start, ' ');
             }
-            out.push_str(&text);
             rest = &rest[i + end + 1..];
         }
         out.push_str(rest);
-        out.trim().to_owned()
+        out.truncate(out.trim_end().len());
+        out
     }
 
-    fn fragment(&mut self, fragment: &str) -> String {
+    fn fragment(&mut self, fragment: &str, out: &mut String) {
         let mut parts = fragment.split('|');
         let kind = parts.next().unwrap_or_default();
         let arg = parts.next().unwrap_or_default();
         match kind {
             "enter" => {
                 self.move_to(arg);
-                self.area_name(arg)
+                out.push_str(self.area_name(arg));
             }
             "waypoint" if !arg.is_empty() => {
                 self.move_to(arg);
-                format!("Waypoint ➞ {}", self.area_name(arg))
+                out.push_str("Waypoint ➞ ");
+                out.push_str(self.area_name(arg));
             }
-            "waypoint" | "waypoint_get" => "Waypoint".into(),
+            "waypoint" | "waypoint_get" => out.push_str("Waypoint"),
             "logout" => {
-                let town = self.town.clone();
-                self.move_to(&town);
-                format!("Logout ➞ {}", self.area_name(&town))
+                self.area.clone_from(&self.town);
+                out.push_str("Logout ➞ ");
+                out.push_str(self.area_name(&self.town));
             }
-            "area" => self.area_name(arg),
-            "quest" => self.quests.get(arg).map_or_else(|| arg.to_owned(), |q| q.name.clone()),
-            "trial" => "Trial of Ascendancy".into(),
-            "dir" => direction(arg).into(),
+            "area" => out.push_str(self.area_name(arg)),
+            "quest" => out.push_str(self.quests.get(arg).map_or(arg, |q| &q.name)),
+            "trial" => out.push_str("Trial of Ascendancy"),
+            "dir" => out.push_str(direction(arg)),
             // kill, arena, quest_text, generic: the argument is the text.
-            _ => arg.to_owned(),
+            _ => out.push_str(arg),
         }
     }
 
     fn move_to(&mut self, area_id: &str) {
         if self.areas.get(area_id).is_some_and(|a| a.is_town_area) {
-            self.town = area_id.to_owned();
+            area_id.clone_into(&mut self.town);
         }
-        self.area = area_id.to_owned();
+        area_id.clone_into(&mut self.area);
     }
 
-    fn area_name(&self, area_id: &str) -> String {
-        self.areas.get(area_id).map_or_else(|| area_id.to_owned(), |a| a.name.clone())
+    fn area_name<'a>(&'a self, area_id: &'a str) -> &'a str {
+        self.areas.get(area_id).map_or(area_id, |a| &a.name)
     }
 }
 
@@ -189,22 +193,35 @@ fn direction(degrees: &str) -> &'static str {
 pub struct RouteProgress {
     route: Route,
     current: usize,
+    /// The Area the Character is in when the Route doesn't visit it.
+    off_route_area: Option<String>,
+    /// The Leg left by a jump that wasn't a step forward (a town trip,
+    /// stepping back); entering its Area again returns there.
+    detour_from: Option<usize>,
 }
 
 impl RouteProgress {
     pub fn new(route: Route) -> Self {
-        Self { route, current: 0 }
+        Self { route, current: 0, off_route_area: None, detour_from: None }
     }
 
-    /// Moves to the Steps for the Area the Character just entered: the
-    /// nearest Leg for that Area, ahead on a tie. Stepping back to the
-    /// previous Area or a town trip mid-Area finds the Leg just behind; an
-    /// Area the Route doesn't visit (e.g. a hideout) changes nothing.
-    /// Returns whether the Steps changed.
+    /// Moves to the Steps for the Area the Character just entered.
+    ///
+    /// Returning from a detour goes back to the Leg it left. Otherwise the
+    /// nearest Leg for that Area wins, ahead on a tie; any jump other than a
+    /// step forward starts a detour. An Area the Route doesn't visit (e.g. a
+    /// hideout) keeps the Steps and marks the Character off the Route.
+    /// Returns whether anything shown changed.
     pub fn enter_area(&mut self, area_id: &str) -> bool {
         let legs = &self.route.legs;
+        let was_off_route = self.off_route_area.take().is_some();
         if legs[self.current].area_id == area_id {
-            return false;
+            return was_off_route;
+        }
+        if let Some(left) = self.detour_from.filter(|&left| legs[left].area_id == area_id) {
+            self.current = left;
+            self.detour_from = None;
+            return true;
         }
         let ahead = (self.current + 1..legs.len()).find(|&i| legs[i].area_id == area_id);
         let behind = (0..self.current).rev().find(|&i| legs[i].area_id == area_id);
@@ -213,13 +230,30 @@ impl RouteProgress {
             (Some(a), _) => Some(a),
             (None, b) => b,
         };
-        match nearest {
-            Some(i) => {
-                self.current = i;
-                true
-            }
-            None => false,
+        let Some(next) = nearest else {
+            self.off_route_area = Some(area_id.to_owned());
+            return true;
+        };
+        if next == self.current + 1 {
+            self.detour_from = None;
+        } else if self.detour_from.is_none() {
+            self.detour_from = Some(self.current);
         }
+        self.current = next;
+        true
+    }
+
+    /// Whether the Character is in an Area the Route doesn't visit; the
+    /// Steps are then the last ones it was on.
+    pub fn is_off_route(&self) -> bool {
+        self.off_route_area.is_some()
+    }
+
+    /// Name of the Area the Character is in, if the game data knows it
+    /// (hideouts aren't in it).
+    pub fn character_area_name(&self) -> Option<&str> {
+        let id = self.off_route_area.as_ref().unwrap_or(&self.route.legs[self.current].area_id);
+        self.route.area_names.get(id).map(String::as_str)
     }
 
     pub fn area_name(&self) -> &str {

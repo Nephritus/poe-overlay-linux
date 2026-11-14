@@ -1,4 +1,5 @@
-//! Client.txt lines recorded from a real PoE 1 session (2026-11-14).
+//! Client.txt lines; all but the chat line were recorded from a real PoE 1
+//! session (2026-11-14).
 
 use poe_overlay::poe1::client_log::{LogEvent, parse_line};
 

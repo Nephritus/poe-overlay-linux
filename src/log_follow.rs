@@ -50,12 +50,13 @@ impl LogFollower {
         let Some(last_end) = self.partial.iter().rposition(|b| matches!(b, b'\r' | b'\n')) else {
             return Ok(Vec::new());
         };
-        let complete: Vec<u8> = self.partial.drain(..=last_end).collect();
-        Ok(complete
+        let lines = self.partial[..=last_end]
             .split(|b| matches!(b, b'\r' | b'\n'))
             .filter(|line| !line.is_empty())
             .map(|line| String::from_utf8_lossy(line).into_owned())
-            .collect())
+            .collect();
+        self.partial.drain(..=last_end);
+        Ok(lines)
     }
 }
 

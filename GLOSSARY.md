@@ -22,6 +22,14 @@ _Avoid_: Quest direction, guide, walkthrough
 One instruction in a Route, tied to the Area where it is performed.
 _Avoid_: Task, objective, quest
 
+**Leg**:
+The Steps of a Route done during one visit to an Area, ending with the Step that leaves it; a Route visits some Areas several times, each a separate Leg.
+_Avoid_: Segment, stage, group
+
+**Sub-step**:
+A hint attached to a Step (direction, layout tip, recommended level), not an instruction of its own.
+_Avoid_: Note, tip, substep
+
 ## Trading
 
 **Price Check**:
