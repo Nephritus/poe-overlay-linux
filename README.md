@@ -38,6 +38,8 @@ Hotkeys are keybinds in your compositor that run `poe-overlay trigger <action>`.
 
 - `currency-rates`: show or hide the Currency Rates Panel.
 
+The compositor must find `poe-overlay`: install it with `cargo install --path .` (to `~/.cargo/bin`, which is usually on the session's PATH) or use the full path to the binary in the bind.
+
 niri (`~/.config/niri/config.kdl`, inside `binds { }`). niri keeps the key from reaching the game:
 
 ```kdl
@@ -48,7 +50,7 @@ If no Overlay is running, the command exits with an error saying so.
 
 ## Currency Rates
 
-The Currency Rates Panel lists the 12 most traded currencies of the league, priced in chaos and divine, from [poe.ninja](https://poe.ninja). Prices are fetched when the Panel opens and reused for 15 minutes. The Panel closes when you switch away from the game. The league is the one poe.ninja lists first, normally the current challenge league; to pick another:
+The Currency Rates Panel lists the 12 most traded currencies of the league, priced in chaos and divine, from [poe.ninja](https://poe.ninja). Prices are fetched when the Panel opens and reused for 15 minutes. If poe.ninja can't be reached, the Panel says why and tries again a minute later at the earliest. The Panel closes when you switch away from the game. The league is the one poe.ninja lists first, normally the current challenge league; to pick another:
 
 ```toml
 [prices]

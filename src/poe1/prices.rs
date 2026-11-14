@@ -1,7 +1,10 @@
 //! Prices from poe.ninja's documented PoE 1 economy endpoints, cached so
-//! poe.ninja is asked at most once per league per 15 minutes.
+//! poe.ninja is asked at most once per league per 15 minutes (once a
+//! minute while it fails).
 
 use std::collections::HashMap;
+use std::fmt::Write;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -10,6 +13,9 @@ const NINJA: &str = "https://poe.ninja/poe1/api/economy";
 
 /// poe.ninja refreshes PoE 1 prices about every 15 minutes.
 const MAX_AGE: Duration = Duration::from_secs(15 * 60);
+
+/// How long a failed fetch is reported again before poe.ninja is retried.
+const RETRY_AFTER: Duration = Duration::from_secs(60);
 
 /// How many currencies the Currency Rates Panel lists.
 const LISTED: usize = 12;
@@ -37,48 +43,78 @@ pub struct CurrencyRates {
 pub struct PriceSource<F> {
     fetch: F,
     /// From config; `None` means the league poe.ninja lists first.
-    league: Option<String>,
-    default_league: Option<(Instant, String)>,
-    currency: HashMap<String, (Instant, CurrencyRates)>,
+    league: Option<Arc<str>>,
+    default_league: Option<Fetched<Arc<str>>>,
+    currency: HashMap<Arc<str>, Fetched<Arc<CurrencyRates>>>,
+}
+
+/// A fetch result and when it was fetched.
+struct Fetched<T> {
+    at: Instant,
+    result: Result<T, String>,
+}
+
+impl<T: Clone> Fetched<T> {
+    /// The result while it may be reused: a success for 15 minutes, a
+    /// failure for a minute (so outages and typos don't hammer poe.ninja).
+    fn reusable(&self, now: Instant) -> Option<Result<T, String>> {
+        let max_age = if self.result.is_ok() { MAX_AGE } else { RETRY_AFTER };
+        (now.duration_since(self.at) < max_age).then(|| self.result.clone())
+    }
 }
 
 impl<F: Fetch> PriceSource<F> {
     pub fn new(fetch: F, league: Option<String>) -> Self {
-        Self { fetch, league, default_league: None, currency: HashMap::new() }
+        Self { fetch, league: league.map(Arc::from), default_league: None, currency: HashMap::new() }
     }
 
-    /// Currency Rates for the league, from cache if under 15 minutes old.
-    /// `now` is the caller's clock. Errors are sentences for the player.
-    pub fn currency_rates(&mut self, now: Instant) -> Result<&CurrencyRates, String> {
-        let league = self.league(now)?;
-        let fresh = self.currency.get(&league).is_some_and(|(at, _)| now.duration_since(*at) < MAX_AGE);
-        if !fresh {
-            let url = format!("{NINJA}/exchange/current/overview?league={}&type=Currency", encode(&league));
-            let body = self.get(&url)?;
-            let rates = parse_currency(&body, &league)?;
-            self.currency.insert(league.clone(), (now, rates));
+    /// Currency Rates for the league, reusing earlier results (see
+    /// [`Fetched::reusable`]). `now` is the caller's clock. Errors are
+    /// sentences for the player.
+    pub fn currency_rates(&mut self, now: Instant) -> Result<Arc<CurrencyRates>, String> {
+        if let Some(reused) = self.cached_currency_rates(now) {
+            return reused;
         }
-        Ok(&self.currency[&league].1)
+        let league = self.league(now)?;
+        let url = format!("{NINJA}/exchange/current/overview?league={}&type=Currency", encode(&league));
+        let result = self
+            .get(&url)
+            .and_then(|body| parse_currency(&body, &league, self.league.is_some()))
+            .map(Arc::new);
+        self.currency.insert(league, Fetched { at: now, result: result.clone() });
+        result
     }
 
-    fn league(&mut self, now: Instant) -> Result<String, String> {
+    /// Currency Rates if they can be answered without asking poe.ninja.
+    pub fn cached_currency_rates(&self, now: Instant) -> Option<Result<Arc<CurrencyRates>, String>> {
+        let league = match &self.league {
+            Some(league) => league.clone(),
+            None => match self.default_league.as_ref()?.reusable(now)? {
+                Ok(league) => league,
+                Err(err) => return Some(Err(err)),
+            },
+        };
+        self.currency.get(&league)?.reusable(now)
+    }
+
+    fn league(&mut self, now: Instant) -> Result<Arc<str>, String> {
         if let Some(league) = &self.league {
             return Ok(league.clone());
         }
-        if let Some((at, league)) = &self.default_league
-            && now.duration_since(*at) < MAX_AGE
-        {
-            return Ok(league.clone());
+        if let Some(reused) = self.default_league.as_ref().and_then(|d| d.reusable(now)) {
+            return reused;
         }
         #[derive(Deserialize)]
         struct League {
             id: String,
         }
-        let body = self.get(&format!("{NINJA}/leagues"))?;
-        let leagues: Vec<League> = serde_json::from_str(&body).map_err(|err| unexpected("league list", err))?;
-        let first = leagues.into_iter().next().ok_or("poe.ninja lists no leagues")?.id;
-        self.default_league = Some((now, first.clone()));
-        Ok(first)
+        let result = self.get(&format!("{NINJA}/leagues")).and_then(|body| {
+            let leagues: Vec<League> = serde_json::from_str(&body).map_err(|err| unexpected("league list", err))?;
+            let first = leagues.into_iter().next().ok_or("poe.ninja lists no leagues")?;
+            Ok(Arc::from(first.id))
+        });
+        self.default_league = Some(Fetched { at: now, result: result.clone() });
+        result
     }
 
     fn get(&self, url: &str) -> Result<String, String> {
@@ -90,7 +126,8 @@ fn unexpected(what: &str, err: impl std::fmt::Display) -> String {
     format!("poe.ninja sent an unexpected {what} ({err})")
 }
 
-fn parse_currency(body: &str, league: &str) -> Result<CurrencyRates, String> {
+/// `configured`: the league came from config.toml, so name it in errors.
+fn parse_currency(body: &str, league: &str, configured: bool) -> Result<CurrencyRates, String> {
     #[derive(Deserialize)]
     struct Overview {
         core: Core,
@@ -118,9 +155,8 @@ fn parse_currency(body: &str, league: &str) -> Result<CurrencyRates, String> {
     }
     let overview: Overview = serde_json::from_str(body).map_err(|err| unexpected("currency overview", err))?;
     if overview.lines.is_empty() {
-        return Err(format!(
-            "poe.ninja has no prices for the league \"{league}\"; check [prices] league in config.toml"
-        ));
+        let hint = if configured { "; check [prices] league in config.toml" } else { "" };
+        return Err(format!("poe.ninja has no prices for the league \"{league}\"{hint}"));
     }
     if overview.core.primary != "chaos" {
         return Err(unexpected("currency overview", format!("prices in {}", overview.core.primary)));
@@ -149,7 +185,9 @@ fn encode(text: &str) -> String {
     for byte in text.bytes() {
         match byte {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(byte as char),
-            _ => out.push_str(&format!("%{byte:02X}")),
+            _ => {
+                let _ = write!(out, "%{byte:02X}");
+            }
         }
     }
     out

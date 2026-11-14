@@ -11,7 +11,6 @@ use rustix::process::{Pid, PidfdFlags, pidfd_open};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
 use crate::config::Config;
 use crate::currency_panel::{self, CurrencyPanel};
@@ -172,7 +171,7 @@ fn take_actions(actions: async_channel::Receiver<Action>, overlay: OverlaySurfac
                 Action::CurrencyRates => {
                     if overlay.toggle(panel.widget()) {
                         // Not awaited here: a slow fetch mustn't hold up the next Action.
-                        glib::spawn_future_local(show_currency_rates(panel.clone(), prices.clone()));
+                        glib::spawn_future_local(currency_panel::refresh(panel.clone(), prices.clone()));
                     }
                 }
             }
@@ -180,23 +179,9 @@ fn take_actions(actions: async_channel::Receiver<Action>, overlay: OverlaySurfac
     });
 }
 
-/// Fetches off the GTK thread (poe.ninja may take seconds) and shows the result.
-async fn show_currency_rates(panel: CurrencyPanel, prices: Arc<Mutex<PriceSource<Http>>>) {
-    panel.show_loading();
-    let (tx, rx) = async_channel::bounded(1);
-    std::thread::spawn(move || {
-        let mut prices = prices.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let _ = tx.send_blocking(prices.currency_rates(Instant::now()).cloned());
-    });
-    match rx.recv().await {
-        Ok(Ok(rates)) => panel.show_rates(&rates),
-        Ok(Err(message)) => panel.show_error(&message),
-        Err(_) => panel.show_error("Couldn't load prices."),
-    }
-}
-
 // Panel positions, in logical pixels from the output's top left.
 const ROUTE_PANEL_X: f64 = 40.0;
 const ROUTE_PANEL_Y: f64 = 200.0;
-const CURRENCY_PANEL_X: f64 = 400.0;
+// Clear of the Route Panel (340 px plus padding and border).
+const CURRENCY_PANEL_X: f64 = 420.0;
 const CURRENCY_PANEL_Y: f64 = 200.0;

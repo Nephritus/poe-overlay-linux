@@ -137,3 +137,36 @@ fn league_poe_ninja_has_no_prices_for_is_named_in_the_error() {
 
     assert!(err.contains("Covnes") && err.contains("[prices] league"), "{err}");
 }
+
+#[test]
+fn failed_fetch_is_retried_after_a_minute_not_on_every_open() {
+    let ninja = FakeNinja { offline: true, ..FakeNinja::default() };
+    let mut source = PriceSource::new(&ninja, Some("Covens".into()));
+    let start = Instant::now();
+
+    let first = source.currency_rates(start).unwrap_err();
+    let again = source.currency_rates(start + Duration::from_secs(59)).unwrap_err();
+    assert_eq!(ninja.requests.borrow().len(), 1);
+    assert_eq!(again, first);
+
+    let _ = source.currency_rates(start + Duration::from_secs(60));
+    assert_eq!(ninja.requests.borrow().len(), 2);
+}
+
+#[test]
+fn default_league_without_prices_does_not_blame_the_config() {
+    struct NoPrices;
+    impl Fetch for NoPrices {
+        fn get(&self, url: &str) -> Result<String, String> {
+            if url.ends_with("/leagues") {
+                return Ok(LEAGUES.into());
+            }
+            Ok(r#"{"core":{"items":[],"rates":{},"primary":"chaos","secondary":"divine"},"lines":[],"items":[]}"#.into())
+        }
+    }
+    let mut source = PriceSource::new(NoPrices, None);
+
+    let err = source.currency_rates(Instant::now()).unwrap_err();
+
+    assert!(err.contains("Covens") && !err.contains("config"), "{err}");
+}

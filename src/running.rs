@@ -1,7 +1,7 @@
-//! The running Overlay: at most one per user session, reachable by
+//! The running overlay program: at most one per user session, reachable by
 //! `poe-overlay trigger <action>` (which compositor hotkeys run).
 //!
-//! The Overlay holds a lock file and listens on a Unix socket, both in
+//! It holds a lock file and listens on a Unix socket, both in
 //! `$XDG_RUNTIME_DIR`. The lock alone decides who is running; the socket is
 //! only rebound by the lock holder, so one left behind by a crash is harmless.
 //! A trigger writes the Action's name and a newline; the Overlay answers `ok`.
@@ -26,22 +26,23 @@ pub enum Action {
 }
 
 impl Action {
-    fn name(self) -> &'static str {
-        match self {
-            Action::CurrencyRates => "currency-rates",
-        }
+    /// The name on the command line, also used on the socket.
+    fn name(self) -> String {
+        self.to_possible_value().expect("no skipped Actions").get_name().to_owned()
     }
 }
 
-/// Held for the Overlay's lifetime; dropping it (or the process dying) lets
-/// another Overlay start.
+const SOCKET: &str = "poe-overlay.sock";
+
+/// Held while the overlay program runs; dropping it (or the process dying)
+/// lets another one start.
 pub struct RunningOverlay {
     _lock: File,
     actions: async_channel::Receiver<Action>,
 }
 
 impl RunningOverlay {
-    /// Starts in `$XDG_RUNTIME_DIR`. `None` if another Overlay is running.
+    /// Starts in `$XDG_RUNTIME_DIR`. `None` if another overlay program runs.
     pub fn start() -> io::Result<Option<RunningOverlay>> {
         Self::start_in(&runtime_dir())
     }
@@ -54,7 +55,7 @@ impl RunningOverlay {
             Err(rustix::io::Errno::WOULDBLOCK) => return Ok(None),
             Err(err) => return Err(err.into()),
         }
-        let socket = dir.join("poe-overlay.sock");
+        let socket = dir.join(SOCKET);
         match std::fs::remove_file(&socket) {
             Err(err) if err.kind() != ErrorKind::NotFound => return Err(err),
             _ => {}
@@ -62,7 +63,12 @@ impl RunningOverlay {
         let listener = UnixListener::bind(&socket)?;
         let (tx, actions) = async_channel::unbounded();
         std::thread::spawn(move || {
-            for stream in listener.incoming().flatten() {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else {
+                    // e.g. out of file descriptors: don't spin.
+                    std::thread::sleep(Duration::from_millis(100));
+                    continue;
+                };
                 if let Some(action) = receive(stream)
                     && tx.send_blocking(action).is_err()
                 {
@@ -107,7 +113,7 @@ impl std::fmt::Display for SendError {
 
 /// Sends `action` to the running Overlay and waits for its answer.
 pub fn send(action: Action) -> Result<(), SendError> {
-    let socket = runtime_dir().join("poe-overlay.sock");
+    let socket = runtime_dir().join(SOCKET);
     let stream = UnixStream::connect(socket).map_err(|err| match err.kind() {
         ErrorKind::NotFound | ErrorKind::ConnectionRefused => SendError::NotRunning,
         _ => SendError::Failed(err),
