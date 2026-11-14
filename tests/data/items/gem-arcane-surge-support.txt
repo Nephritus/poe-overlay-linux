@@ -1,0 +1,23 @@
+Item Class: Support Gems
+Rarity: Gem
+Arcane Surge Support
+--------
+Arcane, Support, Spell, Duration
+Level: 1
+Cost & Reservation Multiplier: 130%
+--------
+Requirements:
+Level: 1
+--------
+Each supported spell will track how much mana you spend on it, granting a buff when the total mana spent reaches a threshold. Cannot support skills used by totems, traps, mines or skills with a reservation.
+--------
+Gain Arcane Surge after Spending a total of 15 Mana on
+Upfront Costs and Effects of a Supported Skill
+Arcane Surge grants 10% increased Cast Speed
+Arcane Surge grants 30% increased Mana Regeneration rate
+Arcane Surge lasts 4 seconds
+Supported Skills deal 10% more Spell Damage while you have Arcane Surge
+--------
+Experience: 1/70
+--------
+This is a Support Gem. It does not grant a bonus to your character, but to skills in sockets connected to it. Place into an item socket connected to a socket containing the Skill Gem you wish to augment. Right click to remove from a socket.

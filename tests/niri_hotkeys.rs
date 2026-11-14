@@ -121,7 +121,7 @@ fn key_bound_in_an_included_file_is_taken_and_not_bound_again() {
     let fates = fates(&niri, &Hotkeys::default());
 
     let location = poe_overlay::hotkeys::Location { file: "cfg/keybinds.kdl".into(), line: 3 };
-    assert_eq!(fates, [(Action::CurrencyRates, Fate::Taken(location))]);
+    assert_eq!(fates, [(Action::CurrencyRates, Fate::Taken(location)), (Action::PriceCheck, Fate::Bind)]);
     setup(&niri, &Hotkeys::default());
     assert!(!folder.read("poe-overlay.kdl").contains("currency-rates"));
 }
@@ -130,7 +130,7 @@ fn key_bound_in_an_included_file_is_taken_and_not_bound_again() {
 fn commented_out_binds_do_not_take_a_key() {
     let folder = Folder::new("binds {\n    /-Alt+R { spawn \"firefox\"; }\n    // Alt+R { spawn \"firefox\"; }\n    /* Alt+R { spawn \"firefox\"; } */\n}\n");
 
-    assert_eq!(fates(&folder.niri(), &Hotkeys::default()), [(Action::CurrencyRates, Fate::Bind)]);
+    assert_eq!(fates(&folder.niri(), &Hotkeys::default()), [(Action::CurrencyRates, Fate::Bind), (Action::PriceCheck, Fate::Bind)]);
 }
 
 #[test]
@@ -144,7 +144,8 @@ fn action_bound_by_hand_counts_as_done_whatever_its_key() {
         let niri = folder.niri();
 
         let location = poe_overlay::hotkeys::Location { file: "cfg/keybinds.kdl".into(), line: 2 };
-        assert_eq!(fates(&niri, &Hotkeys::default()), [(Action::CurrencyRates, Fate::ByHand(location))], "{bind}");
+        let expected = [(Action::CurrencyRates, Fate::ByHand(location)), (Action::PriceCheck, Fate::Bind)];
+        assert_eq!(fates(&niri, &Hotkeys::default()), expected, "{bind}");
         setup(&niri, &Hotkeys::default());
         assert!(!folder.read("poe-overlay.kdl").contains("currency-rates"), "bound twice: {bind}");
     }

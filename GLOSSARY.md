@@ -51,7 +51,7 @@ _Avoid_: Note, tip, substep
 ## Trading
 
 **Price Check**:
-Looking up current market listings for a specific item the player is hovering in game.
+Finding out what the item the player is hovering in game is worth: its poe.ninja price, or current market listings for items poe.ninja doesn't price.
 _Avoid_: Price lookup, appraisal
 
 **Trade Request**:

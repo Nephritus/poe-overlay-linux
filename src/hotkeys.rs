@@ -46,11 +46,28 @@ const MODIFIERS: [(u8, &[&str]); 6] = [
     (ISO_LEVEL5_SHIFT, &["ISO_Level5_Shift", "Mod3"]),
 ];
 
+/// The modifiers a hotkey can need on any keyboard layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Modifier {
+    Ctrl,
+    Shift,
+    Alt,
+    Super,
+}
+
 impl Hotkey {
     /// Parses a key as niri writes it: also `Mod` (Super in a normal session)
     /// and the ISO level shifts.
     pub(crate) fn parse_niri(text: &str) -> Option<Hotkey> {
         parse(text, true).ok()
+    }
+
+    /// Which of Ctrl, Shift, Alt and Super the hotkey holds.
+    pub fn modifiers(&self) -> impl Iterator<Item = Modifier> {
+        [(CTRL, Modifier::Ctrl), (SHIFT, Modifier::Shift), (ALT, Modifier::Alt), (SUPER, Modifier::Super)]
+            .into_iter()
+            .filter(|(bit, _)| self.modifiers & bit != 0)
+            .map(|(_, modifier)| modifier)
     }
 }
 
@@ -138,6 +155,7 @@ impl Default for Hotkeys {
 fn default_key(action: Action) -> Hotkey {
     let text = match action {
         Action::CurrencyRates => "Alt+R",
+        Action::PriceCheck => "Alt+D",
     };
     text.parse().expect("default hotkeys are valid")
 }

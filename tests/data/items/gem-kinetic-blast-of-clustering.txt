@@ -1,0 +1,29 @@
+Item Class: Skill Gems
+Rarity: Gem
+Kinetic Blast of Clustering
+--------
+Attack, Projectile, AoE, Physical
+Level: 4
+Cost: 7 Mana
+Attack Speed: 115% of base
+Attack Damage: 100% of base
+--------
+Requirements:
+Level: 37
+Int: 85
+--------
+Fires a projectile from a Wand that causes a series of area explosions in a secondary radius around its point of impact, each damaging enemies.
+--------
+Kinetic Blast creates 3 additional explosions
+Increases and Reductions to Spell Damage also apply to Attack Damage from this Skill at 200% of their value
+Deals Added Physical Damage equal to 9% of Maximum Mana
+Modifiers to number of Projectiles instead apply to the number of Explosions
+Base explosion radius is 1.9 metres
+Base secondary radius is 2.8 metres
+Projectiles cannot Split
+--------
+Experience: 127,372/554,379
+--------
+Place into an item socket of the right colour to gain this skill. Right click to remove from a socket.
+--------
+Transfigured

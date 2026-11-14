@@ -1,6 +1,8 @@
 //! Path of Exile 1 specifics.
 
 pub mod client_log;
+pub mod item;
+pub mod item_copy;
 pub mod leveling;
 pub mod prices;
 pub mod route;

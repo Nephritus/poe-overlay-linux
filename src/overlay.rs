@@ -15,14 +15,16 @@ use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
 use crate::currency_panel::{self, CurrencyPanel};
-use crate::http::Http;
-use crate::poe1::prices::PriceSource;
 use crate::focus::Visibility;
 use crate::hotkeys::{HotkeySetup, Hotkeys, LaunchPrompt};
+use crate::http::Http;
+use crate::item_copier::ItemCopier;
+use crate::overlay_surface::{OverlaySurface, PanelKind};
 use crate::poe1::client_log;
 use crate::poe1::leveling::{Leveling, ProgressStore};
+use crate::poe1::prices::PriceSource;
 use crate::poe1::route::Route;
-use crate::overlay_surface::{OverlaySurface, PanelKind};
+use crate::price_panel::{self, PricePanel};
 use crate::route_panel::{self, PromptClick, RoutePanel};
 use crate::running::{Action, RunningOverlay};
 use crate::{log_follow, poe1, steam, toplevels};
@@ -93,7 +95,7 @@ fn activate(app: &gtk::Application, game_exited: async_channel::Receiver<()>, ac
         });
     }
 
-    let overlay = OverlaySurface::new(app, &[route_panel::CSS, currency_panel::CSS]);
+    let overlay = OverlaySurface::new(app, &[route_panel::CSS]);
     let route_panel = RoutePanel::new();
     overlay.add_panel(route_panel.widget(), ROUTE_PANEL_X, ROUTE_PANEL_Y, PanelKind::Always);
     let (config, config_ok) = match Config::load() {
@@ -104,14 +106,19 @@ fn activate(app: &gtk::Application, game_exited: async_channel::Receiver<()>, ac
             (Config::default(), false)
         }
     };
+    // The Toggled Panels take turns in one spot next to the Route Panel.
     let currency_panel = CurrencyPanel::new();
-    overlay.add_panel(currency_panel.widget(), CURRENCY_PANEL_X, CURRENCY_PANEL_Y, PanelKind::Toggled);
+    overlay.add_panel(currency_panel.widget(), TOGGLED_PANEL_X, TOGGLED_PANEL_Y, PanelKind::Toggled);
+    let price_panel = PricePanel::new((TOGGLED_PANEL_X, TOGGLED_PANEL_Y));
+    overlay.add_panel(price_panel.widget(), TOGGLED_PANEL_X, TOGGLED_PANEL_Y, PanelKind::Toggled);
+    let held = config.hotkeys.get(Action::PriceCheck).map(|hotkey| hotkey.modifiers().collect()).unwrap_or_default();
+    let copier = ItemCopier::spawn(key_code_of_c(), held);
     follow_route(route_panel.clone(), &config);
     // Default keys mustn't overwrite the player's while the file is broken.
     if config_ok {
         prompt_hotkeys(&route_panel, config.hotkeys);
     }
-    take_actions(actions, overlay.clone(), currency_panel, config.prices.league);
+    take_actions(actions, overlay.clone(), currency_panel, price_panel, copier, config.prices.league);
 
     let changes = toplevels::watch();
     glib::spawn_future_local(async move {
@@ -228,25 +235,46 @@ fn show(panel: &RoutePanel, leveling: &Leveling) {
 }
 
 /// Carries out Actions from hotkeys while the game is focused.
-fn take_actions(actions: async_channel::Receiver<Action>, overlay: OverlaySurface, panel: CurrencyPanel, league: Option<String>) {
+fn take_actions(
+    actions: async_channel::Receiver<Action>,
+    overlay: OverlaySurface,
+    currency: CurrencyPanel,
+    price: PricePanel,
+    copier: ItemCopier,
+    league: Option<String>,
+) {
     let prices = Arc::new(Mutex::new(PriceSource::new(Http::new(), league)));
     glib::spawn_future_local(async move {
         while let Ok(action) = actions.recv().await {
+            // Not awaited here: a slow copy or fetch mustn't hold up the next Action.
             match action {
                 Action::CurrencyRates => {
-                    if overlay.toggle(panel.widget()) {
-                        // Not awaited here: a slow fetch mustn't hold up the next Action.
-                        glib::spawn_future_local(currency_panel::refresh(panel.clone(), prices.clone()));
+                    if overlay.toggle(currency.widget()) {
+                        glib::spawn_future_local(currency_panel::refresh(currency.clone(), prices.clone()));
                     }
+                }
+                Action::PriceCheck => {
+                    let check = price_panel::price_check(copier.clone(), overlay.clone(), price.clone(), prices.clone());
+                    glib::spawn_future_local(check);
                 }
             }
         }
     });
 }
 
+/// The evdev code of the key that types `c` in the player's keyboard layout,
+/// from the compositor's keymap; the QWERTY position if GDK doesn't know.
+fn key_code_of_c() -> u16 {
+    const QWERTY_C: u16 = 46;
+    let keys = gtk::gdk::Display::default().and_then(|display| display.map_keyval(gtk::gdk::Key::c));
+    let first_level = keys.and_then(|keys| keys.into_iter().find(|key| key.group() == 0 && key.level() == 0));
+    // XKB key codes are evdev codes plus 8.
+    first_level.and_then(|key| u16::try_from(key.keycode()).ok()?.checked_sub(8)).unwrap_or(QWERTY_C)
+}
+
 // Panel positions, in logical pixels from the output's top left.
 const ROUTE_PANEL_X: f64 = 40.0;
 const ROUTE_PANEL_Y: f64 = 200.0;
 // Clear of the Route Panel (340 px plus padding and border).
-const CURRENCY_PANEL_X: f64 = 420.0;
-const CURRENCY_PANEL_Y: f64 = 200.0;
+const TOGGLED_PANEL_X: f64 = 420.0;
+const TOGGLED_PANEL_Y: f64 = 200.0;

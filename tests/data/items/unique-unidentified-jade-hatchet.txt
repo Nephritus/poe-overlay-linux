@@ -1,0 +1,18 @@
+Item Class: One Hand Axes
+Rarity: Unique
+Jade Hatchet
+--------
+One Handed Axe
+Physical Damage: 10-15
+Critical Strike Chance: 5.00%
+Attacks per Second: 1.45
+Weapon Range: 11
+--------
+Requirements:
+Str: 21
+--------
+Sockets: R-G-B
+--------
+Item Level: 71
+--------
+Unidentified

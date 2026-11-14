@@ -37,6 +37,7 @@ To opt out, set `"GrabPointer"="Y"` in that section. `launch` never changes a va
 Hotkeys are keybinds in your compositor that run `poe-overlay trigger <action>`. The running Overlay carries out the action while the game is focused. Actions and their default keys:
 
 - `currency-rates` (Alt+R): show or hide the Currency Rates Panel.
+- `price-check` (Alt+D): price the item under the pointer (see [Price Check](#price-check)).
 
 Choose keys in `~/.config/poe-overlay/config.toml`. Modifiers are Ctrl, Shift, Alt and Super; keys are XKB key names such as `R`, `F5` or `Return`. `""` leaves an Action without a hotkey:
 
@@ -76,6 +77,27 @@ The Currency Rates Panel lists the 12 most traded currencies of the league, pric
 [prices]
 league = "Hardcore Covens"
 ```
+
+## Price Check
+
+Hover over an item in game and press the Price Check hotkey (Alt+D). The overlay presses Ctrl+Alt+C for you, reads the item text the game copies, and shows its [poe.ninja](https://poe.ninja) price in chaos and divine, on the half of the screen away from the pointer:
+
+- **Uniques** by name, at their links (5 and 6 links are priced on their own) and with each variant poe.ninja lists. An unidentified unique lists the uniques of its base.
+- **Gems** at their level, quality and corruption; when poe.ninja has no such entry, the closest ones are shown, labelled. Imbued gems are priced with their support.
+- **Currency** and other stackables (oils, essences, fossils, fragments, scarabs…), each and for the stack.
+- **Divination cards**, each and for the stack.
+
+Other items get a short reason instead (a trade-site search comes later). Pressing the hotkey again closes the Panel when the pointer is on the same item or on nothing; on another item, it prices that one. The ✕ button and switching away from the game close it too. The game must be the English client.
+
+The clipboard is read once per press (GGG's rule for tools). Before the copy, the overlay puts a placeholder on the clipboard: with Proton 11 the game's copy otherwise doesn't reach other programs. The copied item stays on your clipboard, as when you copy it yourself.
+
+Keys are pressed through a virtual keyboard (`/dev/uinput`), which works on any compositor. Steam's udev rules already allow it on most systems; if not, the Panel shows the rule to add:
+
+```
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"
+```
+
+Put it in `/etc/udev/rules.d/60-poe-overlay-uinput.rules`, then run `sudo udevadm control --reload && sudo udevadm trigger`.
 
 ## Leveling Route
 

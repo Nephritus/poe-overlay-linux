@@ -22,6 +22,12 @@ window.poe-overlay { background: transparent; }
   padding: 12px;
   color: white;
 }
+.panel-title { font-weight: bold; color: rgb(230, 190, 110); }
+.panel-button { min-width: 0; min-height: 0; padding: 0 6px; }
+.panel-name { margin-right: 12px; }
+.panel-number { font-feature-settings: 'tnum'; margin-left: 12px; }
+.panel-head, .panel-status { font-size: smaller; color: rgb(160, 160, 170); }
+.panel-error { font-size: smaller; color: rgb(230, 120, 100); }
 ";
 
 /// How long a Panel stays shown.
@@ -86,14 +92,49 @@ impl OverlaySurface {
     }
 
     /// Shows or hides a `Toggled` Panel; returns whether it is shown now.
+    /// See [`OverlaySurface::show`].
+    pub fn toggle(&self, widget: &impl IsA<gtk::Widget>) -> bool {
+        if widget.as_ref().is_visible() {
+            self.hide(widget);
+            false
+        } else {
+            self.show(widget)
+        }
+    }
+
+    /// Shows a `Toggled` Panel in place of any other shown one (they share
+    /// the space next to the Route Panel); returns whether it is shown.
     /// Ignored while the game isn't focused, so a Panel never pops up later
     /// out of nowhere.
-    pub fn toggle(&self, widget: &impl IsA<gtk::Widget>) -> bool {
+    pub fn show(&self, widget: &impl IsA<gtk::Widget>) -> bool {
         let widget = widget.as_ref();
-        if self.window.is_visible() {
-            widget.set_visible(!widget.is_visible());
+        if !self.window.is_visible() {
+            return false;
         }
-        widget.is_visible()
+        for panel in self.panels.borrow().iter().filter(|p| p.kind == PanelKind::Toggled && p.widget != *widget) {
+            panel.widget.set_visible(false);
+        }
+        widget.set_visible(true);
+        true
+    }
+
+    pub fn hide(&self, widget: &impl IsA<gtk::Widget>) {
+        widget.as_ref().set_visible(false);
+    }
+
+    /// Moves a Panel to `(x, y)` logical pixels from the output's top left.
+    pub fn move_panel(&self, widget: &impl IsA<gtk::Widget>, x: f64, y: f64) {
+        self.fixed.move_(widget, x, y);
+    }
+
+    /// The output's width in logical pixels (0 before it is first shown).
+    pub fn width(&self) -> i32 {
+        self.window.width()
+    }
+
+    /// Whether the game is focused (the Overlay shows only then).
+    pub fn game_focused(&self) -> bool {
+        self.window.is_visible()
     }
 
     /// Follows the game window's focus: shows the Overlay on the game's

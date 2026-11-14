@@ -1,0 +1,13 @@
+Item Class: Map Fragments
+Rarity: Normal
+Trarthan Scarab of Infamy
+--------
+Stack Size: 1/20
+Limit: 1
+--------
+Mercenaries found in Area are Infamous
+Mercenaries found in Area are accompanied by two Wild Mercenaries
+--------
+Some men must make their own way.
+--------
+Can be used in a personal Map Device to add modifiers to a Map.

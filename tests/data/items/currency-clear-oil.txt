@@ -1,0 +1,10 @@
+Item Class: Stackable Currency
+Rarity: Currency
+Clear Oil
+--------
+Stack Size: 5/10
+--------
+Can be combined with other Oils at Cassia to Enchant Rings or Amulets, or to modify Blighted Maps.
+Shift click to unstack.
+--------
+Note: ~price 1 blessed

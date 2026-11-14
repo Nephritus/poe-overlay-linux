@@ -1,0 +1,25 @@
+Item Class: Wands
+Rarity: Rare
+Miracle Chant
+Imbued Wand
+--------
+Wand
+Physical Damage: 38-69 (augmented)
+Critical Strike Chance: 7.00%
+Attacks per Second: 1.50
+--------
+Requirements:
+Level: 59
+Int: 188
+--------
+Sockets: R B
+--------
+Item Level: 70
+--------
+33% increased Spell Damage (implicit)
+--------
+Adds 10 to 16 Physical Damage
+24% increased Fire Damage
+Attacks with this Weapon Penetrate 10% Lightning Resistance
+--------
+Crusader Item

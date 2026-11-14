@@ -24,7 +24,7 @@ fn empty_key_leaves_the_action_without_a_hotkey() {
     let hotkeys = config("[hotkeys]\ncurrency-rates = \"\"").unwrap().hotkeys;
 
     assert!(hotkeys.get(Action::CurrencyRates).is_none());
-    assert_eq!(hotkeys.iter().count(), 0);
+    assert!(hotkeys.iter().all(|(action, _)| action != Action::CurrencyRates));
 }
 
 #[test]
@@ -134,7 +134,8 @@ fn key_taken_after_set_up_is_reported_and_left_to_the_player() {
 #[test]
 fn action_bound_by_hand_is_not_asked_about() {
     let session = Session::new();
-    fs::write(session.niri_file("config.kdl"), "binds {\n    Alt+R { spawn \"poe-overlay\" \"trigger\" \"currency-rates\"; }\n}\n").unwrap();
+    let binds = "Alt+R { spawn \"poe-overlay\" \"trigger\" \"currency-rates\"; }\n    Alt+D { spawn \"poe-overlay\" \"trigger\" \"price-check\"; }";
+    fs::write(session.niri_file("config.kdl"), format!("binds {{\n    {binds}\n}}\n")).unwrap();
 
     assert!(matches!(session.start(Hotkeys::default()).at_launch(), LaunchPrompt::Nothing));
 }

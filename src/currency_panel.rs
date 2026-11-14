@@ -3,31 +3,22 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 
 use gtk::prelude::*;
 
-use crate::http::Http;
-use crate::poe1::prices::{CurrencyRates, PriceSource};
+use crate::panel_prices::{PriceTable, Prices, ask};
+use crate::poe1::prices::CurrencyRates;
 
-/// Prices shared between the GTK thread and fetch threads.
-pub type Prices = Arc<Mutex<PriceSource<Http>>>;
-
-/// Shows the current Currency Rates: from cache at once, otherwise fetched
-/// off the GTK thread (poe.ninja may take seconds).
+/// Shows the current Currency Rates: from cache at once, otherwise fetched.
 pub async fn refresh(panel: CurrencyPanel, prices: Prices) {
     let cached = prices.try_lock().ok().and_then(|source| source.cached_currency_rates(Instant::now()));
     let result = match cached {
         Some(result) => result,
         None => {
             panel.show_loading();
-            let (tx, rx) = async_channel::bounded(1);
-            std::thread::spawn(move || {
-                let mut source = prices.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                let _ = tx.send_blocking(source.currency_rates(Instant::now()));
-            });
-            rx.recv().await.unwrap_or_else(|_| Err("Couldn't load prices.".into()))
+            ask(&prices, |source| source.currency_rates(Instant::now())).await
         }
     };
     match result {
@@ -36,20 +27,11 @@ pub async fn refresh(panel: CurrencyPanel, prices: Prices) {
     }
 }
 
-pub const CSS: &str = "
-.rates-title { font-weight: bold; color: rgb(230, 190, 110); }
-.rates-name { margin-right: 12px; }
-.rates-price { font-feature-settings: 'tnum'; margin-left: 12px; }
-.rates-head { font-size: smaller; color: rgb(160, 160, 170); }
-.rates-status { font-size: smaller; color: rgb(160, 160, 170); }
-.rates-error { font-size: smaller; color: rgb(230, 120, 100); }
-";
-
 #[derive(Clone)]
 pub struct CurrencyPanel {
     root: gtk::Box,
     title: gtk::Label,
-    grid: gtk::Grid,
+    table: Rc<RefCell<PriceTable>>,
     status: gtk::Label,
     /// The rates on screen, to skip rebuilding the rows for the same ones.
     shown: Rc<RefCell<Option<Arc<CurrencyRates>>>>,
@@ -59,13 +41,13 @@ impl CurrencyPanel {
     pub fn new() -> Self {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
         root.add_css_class("panel");
-        let title = label("Currency Rates", "rates-title");
-        let grid = gtk::Grid::new();
-        let status = label("", "rates-status");
+        let title = label("Currency Rates", "panel-title");
+        let table = PriceTable::new();
+        let status = label("", "panel-status");
         root.append(&title);
-        root.append(&grid);
+        root.append(table.widget());
         root.append(&status);
-        Self { root, title, grid, status, shown: Rc::default() }
+        Self { root, title, table: Rc::new(RefCell::new(table)), status, shown: Rc::default() }
     }
 
     pub fn widget(&self) -> &gtk::Box {
@@ -83,16 +65,10 @@ impl CurrencyPanel {
             return;
         }
         self.title.set_label(&format!("Currency Rates · {}", rates.league));
-        while let Some(child) = self.grid.first_child() {
-            self.grid.remove(&child);
-        }
-        self.grid.attach(&label("", "rates-head"), 0, 0, 1, 1);
-        self.grid.attach(&price_label("chaos", "rates-head"), 1, 0, 1, 1);
-        self.grid.attach(&price_label("divine", "rates-head"), 2, 0, 1, 1);
-        for (row, rate) in (1..).zip(&rates.rates) {
-            self.grid.attach(&label(&rate.name, "rates-name"), 0, row, 1, 1);
-            self.grid.attach(&price_label(&format_price(rate.chaos), "rates-price"), 1, row, 1, 1);
-            self.grid.attach(&price_label(&format_price(rate.divine), "rates-price"), 2, row, 1, 1);
+        let mut table = self.table.borrow_mut();
+        table.clear();
+        for rate in &rates.rates {
+            table.row(&rate.name, rate.chaos, rate.divine);
         }
         *shown = Some(rates);
     }
@@ -104,7 +80,7 @@ impl CurrencyPanel {
 
     fn set_status(&self, text: &str, error: bool) {
         self.status.set_label(text);
-        self.status.set_css_classes(&[if error { "rates-error" } else { "rates-status" }]);
+        self.status.set_css_classes(&[if error { "panel-error" } else { "panel-status" }]);
     }
 }
 
@@ -112,20 +88,4 @@ fn label(text: &str, class: &str) -> gtk::Label {
     let label = gtk::Label::builder().label(text).xalign(0.0).build();
     label.add_css_class(class);
     label
-}
-
-fn price_label(text: &str, class: &str) -> gtk::Label {
-    let label = label(text, class);
-    label.set_xalign(1.0);
-    label
-}
-
-/// Three significant digits (at most six decimals), enough to compare
-/// currencies at a glance: 93.4, 1.74, 0.213, 0.00228.
-fn format_price(value: f64) -> String {
-    if value <= 0.0 {
-        return "0".into();
-    }
-    let decimals = (2 - value.log10().floor() as i32).clamp(0, 6) as usize;
-    format!("{value:.decimals$}")
 }

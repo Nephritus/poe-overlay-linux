@@ -7,7 +7,6 @@ use crate::poe1::route::RouteProgress;
 pub const CSS: &str = "
 .route-area { font-weight: bold; color: rgb(230, 190, 110); }
 .route-character { font-size: smaller; color: rgb(160, 160, 170); }
-.route-nav { min-width: 0; min-height: 0; padding: 0 6px; }
 .route-step { margin-top: 2px; }
 .route-sub-step { font-size: smaller; color: rgb(190, 190, 200); margin-left: 12px; }
 .route-note { font-size: smaller; color: rgb(230, 120, 100); }
@@ -148,7 +147,7 @@ fn label(text: &str, class: &str) -> gtk::Label {
 /// A pointer-only button: the overlay never takes keyboard focus.
 fn nav_button(text: &str, tooltip: &str) -> gtk::Button {
     let button = gtk::Button::builder().label(text).tooltip_text(tooltip).focusable(false).focus_on_click(false).build();
-    button.add_css_class("route-nav");
+    button.add_css_class("panel-button");
     button.add_css_class("flat");
     button
 }

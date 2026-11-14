@@ -23,6 +23,8 @@ const ANSWER_TIMEOUT: Duration = Duration::from_secs(2);
 pub enum Action {
     /// Show or hide the Currency Rates Panel.
     CurrencyRates,
+    /// Copy the item under the pointer and show its poe.ninja price.
+    PriceCheck,
 }
 
 impl Action {
@@ -35,6 +37,7 @@ impl Action {
     pub fn title(self) -> &'static str {
         match self {
             Action::CurrencyRates => "Currency Rates",
+            Action::PriceCheck => "Price Check",
         }
     }
 }
