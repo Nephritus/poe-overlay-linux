@@ -6,7 +6,7 @@ Awakened PoE Trade failed on this exact setup: overlay not on top, focus stealin
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [ ] Each prototype shows a semi-transparent panel with a button on the overlay layer above PoE (borderless windowed, Proton/Xwayland) on niri
 - [ ] Clicking the button registers in the prototype while the PoE window keeps keyboard focus (confirmed via the compositor's focused-window query and by game keys still working)
@@ -53,4 +53,4 @@ The prototype code is on the throwaway branch `prototype/01-toolkit` (commits 4d
 | E Alt+Tab, no black screen or flicker | | |
 | F No flicker or FPS drop | | |
 
-**Toolkit choice:** pending (human).
+**Toolkit choice:** GTK4 (gtk4-rs + gtk4-layer-shell), chosen by the user on 2026-11-14. Plain gtk4-rs without a framework on top, as decided in the design session. The in-game results table was not filled in; ticket 02 re-checks focus and click-through in game.
