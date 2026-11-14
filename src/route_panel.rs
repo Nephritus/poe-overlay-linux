@@ -44,7 +44,7 @@ impl RoutePanel {
     }
 
     pub fn show(&self, progress: &RouteProgress) {
-        self.area.set_label(progress.area_name());
+        self.area.set_label(&format!("Act {} · {}", progress.act(), progress.area_name()));
         self.off_route.set_visible(progress.is_off_route());
         self.off_route.set_label(&match progress.character_area_name() {
             Some(name) if progress.is_off_route() => format!("You're in {name}, which the Route doesn't visit."),

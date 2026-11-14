@@ -11,6 +11,7 @@ use rustix::process::{Pid, PidfdFlags, pidfd_open};
 
 use std::cell::Cell;
 
+use crate::config::Config;
 use crate::focus::Visibility;
 use crate::poe1::client_log::{self, LogEvent};
 use crate::poe1::route::{Route, RouteProgress};
@@ -101,7 +102,11 @@ fn activate(app: &gtk::Application, game_exited: async_channel::Receiver<()>) {
 
 /// Shows the Route and moves it along as Client.txt reports Area changes.
 fn follow_route(panel: RoutePanel) {
-    let mut progress = RouteProgress::new(Route::act1(true));
+    let route = Route::campaign(&Config::load().route);
+    for problem in route.problems() {
+        eprintln!("poe-overlay: Route data: {problem}");
+    }
+    let mut progress = RouteProgress::new(route);
     panel.show(&progress);
     let Some(log) = poe1::client_log_path(&steam::default_roots()) else {
         panel.set_note("Client.txt not found in any Steam library; the Route won't follow your Areas.");

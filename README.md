@@ -34,8 +34,19 @@ To opt out, set `"GrabPointer"="Y"` in that section. `launch` never changes a va
 
 ## Leveling Route
 
-While the game is focused, a Route panel shows the Steps for the Area your Character is in. It moves to the right Steps when the game's `Client.txt` reports a new Area. `Client.txt` is found through Steam's library folders. Act 1 only for now.
+While the game is focused, a Route panel shows the Steps for the Area your Character is in, acts 1 to 10. It moves to the right Steps when the game's `Client.txt` reports a new Area. `Client.txt` is found through Steam's library folders.
+
+The Route variant is set in `~/.config/poe-overlay/config.toml` (or under `$XDG_CONFIG_HOME`). The defaults are exile-leveling's:
+
+```toml
+[route]
+league_start = true   # side trips that pay off on a fresh league
+bandit = "alira"      # kill_all, oak, kraityn or alira
+library = true        # include the Library in Act 3
+```
+
+Changes apply the next time the game starts. If the file has a mistake, the overlay reports it and uses the defaults.
 
 ## Credits
 
-Leveling Route data comes from [exile-leveling](https://github.com/HeartofPhos/exile-leveling) by HeartofPhos, used under the MIT License (see `data/exile-leveling/LICENSE`). Game names and text belong to Grinding Gear Games.
+Leveling Route data comes from [exile-leveling](https://github.com/HeartofPhos/exile-leveling) by HeartofPhos, used under the MIT License (see `data/exile-leveling/LICENSE`). Game names and text belong to Grinding Gear Games. `poe-overlay credits` prints this notice and the license.

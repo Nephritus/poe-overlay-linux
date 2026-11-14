@@ -25,11 +25,17 @@ enum Commands {
         #[arg(long)]
         game_pid: i32,
     },
+    /// Shows credits and licenses for bundled third-party data.
+    Credits,
 }
 
 fn main() -> ExitCode {
     match Cli::parse().command {
         Commands::Launch { game } => poe_overlay::launch::run(&game),
         Commands::Overlay { game_pid } => poe_overlay::overlay::run(game_pid),
+        Commands::Credits => {
+            print!("{}", poe_overlay::poe1::route::CREDITS);
+            ExitCode::SUCCESS
+        }
     }
 }

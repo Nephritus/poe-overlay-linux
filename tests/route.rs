@@ -1,13 +1,17 @@
-//! The bundled Act 1 Route (exile-leveling) following the Character's Areas.
+//! The bundled campaign Route (exile-leveling) following the Character's Areas.
 
-use poe_overlay::poe1::route::{Route, RouteProgress, Step};
+use poe_overlay::poe1::route::{Bandit, Route, RouteOptions, RouteProgress, Step};
 
 fn texts(steps: &[Step]) -> Vec<&str> {
     steps.iter().map(|s| s.text.as_str()).collect()
 }
 
 fn league_start() -> RouteProgress {
-    RouteProgress::new(Route::act1(true))
+    RouteProgress::new(Route::campaign(&RouteOptions::default()))
+}
+
+fn with(options: RouteOptions) -> RouteProgress {
+    RouteProgress::new(Route::campaign(&options))
 }
 
 #[test]
@@ -51,7 +55,7 @@ fn league_start_route_includes_its_side_trips() {
 
 #[test]
 fn route_without_league_start_leaves_the_side_trips_out() {
-    let mut progress = RouteProgress::new(Route::act1(false));
+    let mut progress = with(RouteOptions { league_start: false, ..RouteOptions::default() });
 
     walk(&mut progress, &["1_1_town", "1_1_2"]);
     assert_eq!(texts(progress.steps()), ["➞ The Mud Flats"]);
@@ -61,15 +65,15 @@ fn route_without_league_start_leaves_the_side_trips_out() {
 }
 
 #[test]
-fn same_named_area_in_another_act_is_not_mistaken_for_it() {
+fn same_named_area_in_another_act_shows_that_acts_steps() {
     let mut progress = league_start();
     walk(&mut progress, &["1_1_town", "1_1_2"]);
 
     // Act 6's Lioneye's Watch, not Act 1's (1_1_town).
     progress.enter_area("2_6_town");
 
-    assert_eq!(progress.area_name(), "The Coast");
-    assert_eq!(texts(progress.steps()), ["Get Waypoint", "➞ The Mud Flats"]);
+    assert_eq!((progress.act(), progress.area_name()), (6, "Lioneye's Watch"));
+    assert_eq!(texts(progress.steps()), ["➞ The Twilight Strand"]);
 }
 
 #[test]
@@ -140,7 +144,7 @@ fn side_area_off_the_route_is_reported_and_keeps_the_last_steps() {
     let mut progress = league_start();
     walk(&mut progress, &["1_1_town", "1_1_2", "1_1_3"]);
 
-    progress.enter_area("1_1_3a");
+    progress.enter_area("1_1_3a"); // The Fetid Pool, a side area
 
     assert!(progress.is_off_route());
     assert_eq!(progress.character_area_name(), Some("The Fetid Pool"));
@@ -170,4 +174,52 @@ fn town_trip_returns_to_the_visit_it_left_even_when_a_later_visit_is_nearer() {
     walk(&mut progress, &["1_1_town", "1_1_4_1"]);
 
     assert_eq!(texts(progress.steps()), ["Waypoint ➞ The Coast"]);
+}
+
+#[test]
+fn every_act_parses_without_problems_in_every_variant() {
+    for league_start in [true, false] {
+        for library in [true, false] {
+            for bandit in [Bandit::KillAll, Bandit::Oak, Bandit::Kraityn, Bandit::Alira] {
+                let options = RouteOptions { league_start, library, bandit };
+
+                let route = Route::campaign(&options);
+
+                assert_eq!(route.problems(), &[] as &[String], "{options:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn area_in_a_later_act_shows_that_acts_steps() {
+    let mut progress = league_start();
+
+    progress.enter_area("2_6_2");
+
+    assert_eq!((progress.act(), progress.area_name()), (6, "The Coast"));
+    assert_eq!(texts(progress.steps()), ["➞ The Mud Flats"]);
+}
+
+#[test]
+fn portal_placed_in_an_area_is_taken_back_from_town() {
+    let mut progress = league_start();
+
+    walk(&mut progress, &["1_2_1", "1_2_town", "1_2_2", "1_2_3", "1_2_town"]);
+    assert_eq!(texts(progress.steps()), ["Take Portal ➞ The Old Fields"]);
+
+    progress.enter_area("1_2_2");
+    assert_eq!(texts(progress.steps()), ["➞ The Den"]);
+}
+
+#[test]
+fn bandit_choice_changes_the_steps() {
+    let after_the_wetlands = |bandit| {
+        let mut progress = with(RouteOptions { bandit, ..RouteOptions::default() });
+        walk(&mut progress, &["1_2_12", "1_2_9"]);
+        progress.steps()[0].text.clone()
+    };
+
+    assert_eq!(after_the_wetlands(Bandit::KillAll), "Kill Alira Darktongue, take Alira's Amulet");
+    assert_eq!(after_the_wetlands(Bandit::Alira), "Help Alira Darktongue, take The Apex");
 }

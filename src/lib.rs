@@ -1,3 +1,4 @@
+pub mod config;
 pub mod focus;
 pub mod instance;
 pub mod launch;

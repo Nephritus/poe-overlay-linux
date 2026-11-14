@@ -5,20 +5,86 @@
 //! `{…}` fragments name game things by ID, `#…` ends the line as a comment,
 //! `#sub` lines add Sub-steps to the previous Step and
 //! `#ifdef`/`#ifndef`/`#endif` select variants. The Character's Area is
-//! simulated from the start Area: `enter` and `waypoint` move it, `logout`
-//! returns to the last town. Only the fragments Act 1 uses are understood;
-//! others render their argument as text.
+//! simulated through all acts from the start Area, as exile-leveling does:
+//! `enter`, `waypoint` and `portal|use` move it; `logout` and `ascend` return
+//! to the last town.
 
 use std::collections::HashMap;
 
 use serde::Deserialize;
 
-const ACT_1: &str = include_str!("../../data/exile-leveling/routes/act-1.txt");
+const ACTS: [&str; 10] = [
+    include_str!("../../data/exile-leveling/routes/act-1.txt"),
+    include_str!("../../data/exile-leveling/routes/act-2.txt"),
+    include_str!("../../data/exile-leveling/routes/act-3.txt"),
+    include_str!("../../data/exile-leveling/routes/act-4.txt"),
+    include_str!("../../data/exile-leveling/routes/act-5.txt"),
+    include_str!("../../data/exile-leveling/routes/act-6.txt"),
+    include_str!("../../data/exile-leveling/routes/act-7.txt"),
+    include_str!("../../data/exile-leveling/routes/act-8.txt"),
+    include_str!("../../data/exile-leveling/routes/act-9.txt"),
+    include_str!("../../data/exile-leveling/routes/act-10.txt"),
+];
 const AREAS: &str = include_str!("../../data/exile-leveling/json/areas.json");
 const QUESTS: &str = include_str!("../../data/exile-leveling/json/quests.json");
 
+/// Attribution for the bundled Route data, with its license.
+pub const CREDITS: &str = concat!(
+    "Leveling Route data from exile-leveling by HeartofPhos\n",
+    "https://github.com/HeartofPhos/exile-leveling\n",
+    "Game names and text belong to Grinding Gear Games.\n\n",
+    include_str!("../../data/exile-leveling/LICENSE"),
+);
+
 const START_AREA: &str = "1_1_1";
 const START_TOWN: &str = "1_1_town";
+
+/// Route variants, named after exile-leveling's build options; the defaults
+/// are exile-leveling's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct RouteOptions {
+    /// Include side trips that pay off on a fresh league (e.g. early
+    /// waypoints and vendor items).
+    pub league_start: bool,
+    pub bandit: Bandit,
+    /// Include the Library in Act 3.
+    pub library: bool,
+}
+
+impl Default for RouteOptions {
+    fn default() -> Self {
+        Self { league_start: true, bandit: Bandit::Alira, library: true }
+    }
+}
+
+/// Which Act 2 bandit to help; `KillAll` helps none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Bandit {
+    KillAll,
+    Oak,
+    Kraityn,
+    Alira,
+}
+
+impl RouteOptions {
+    fn defines(&self) -> Vec<&'static str> {
+        let mut defines = vec![match self.bandit {
+            Bandit::KillAll => "BANDIT_KILL",
+            Bandit::Oak => "BANDIT_OAK",
+            Bandit::Kraityn => "BANDIT_KRAITYN",
+            Bandit::Alira => "BANDIT_ALIRA",
+        }];
+        if self.league_start {
+            defines.push("LEAGUE_START");
+        }
+        if self.library {
+            defines.push("LIBRARY");
+        }
+        defines
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Step {
@@ -36,13 +102,17 @@ struct Leg {
 #[derive(Debug)]
 pub struct Route {
     legs: Vec<Leg>,
-    area_names: HashMap<String, String>,
+    areas: HashMap<String, Area>,
+    problems: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Area {
     name: String,
+    act: u32,
     is_town_area: bool,
+    parent_town_area_id: Option<String>,
+    crafting_recipes: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -51,18 +121,27 @@ struct Quest {
 }
 
 impl Route {
-    /// The bundled Act 1 Route; `league_start` includes its league-start-only Steps.
-    pub fn act1(league_start: bool) -> Route {
+    /// The bundled campaign Route, acts 1–10, in the `options` variant.
+    pub fn campaign(options: &RouteOptions) -> Route {
         let areas: HashMap<String, Area> = serde_json::from_str(AREAS).expect("bundled areas.json");
         let quests: HashMap<String, Quest> = serde_json::from_str(QUESTS).expect("bundled quests.json");
-        let mut defines = Vec::new();
-        if league_start {
-            defines.push("LEAGUE_START");
-        }
-        let legs = Parser { areas: &areas, quests: &quests, area: START_AREA.into(), town: START_TOWN.into() }
-            .parse(ACT_1, &defines);
-        let area_names = areas.into_iter().map(|(id, area)| (id, area.name)).collect();
-        Route { legs, area_names }
+        let mut parser = Parser {
+            areas: &areas,
+            quests: &quests,
+            area: START_AREA.into(),
+            town: START_TOWN.into(),
+            portal: None,
+            problems: Vec::new(),
+            line: (0, 0),
+        };
+        let legs = parser.parse(&ACTS, &options.defines());
+        let problems = parser.problems;
+        Route { legs, areas, problems }
+    }
+
+    /// Route data the parser couldn't make sense of; empty for the bundled data.
+    pub fn problems(&self) -> &[String] {
+        &self.problems
     }
 }
 
@@ -71,48 +150,67 @@ struct Parser<'a> {
     quests: &'a HashMap<String, Quest>,
     /// Where the Character is at this point of the Route.
     area: String,
-    /// The town `logout` returns to.
+    /// The town `logout` and `ascend` return to.
     town: String,
+    /// The Area a placed portal leads back to.
+    portal: Option<String>,
+    problems: Vec<String>,
+    /// Current act file and 1-based line, for problem reports.
+    line: (usize, usize),
 }
 
 impl Parser<'_> {
-    fn parse(mut self, source: &str, defines: &[&str]) -> Vec<Leg> {
+    fn parse(&mut self, acts: &[&str], defines: &[&str]) -> Vec<Leg> {
         let mut legs: Vec<Leg> = Vec::new();
-        // One entry per open #ifdef/#ifndef: whether its lines apply.
-        let mut conditions: Vec<bool> = Vec::new();
-        for line in source.lines() {
-            let line = line.trim();
-            if let Some(name) = line.strip_prefix("#ifdef ") {
-                conditions.push(defines.contains(&name.trim()));
-                continue;
-            }
-            if let Some(name) = line.strip_prefix("#ifndef ") {
-                conditions.push(!defines.contains(&name.trim()));
-                continue;
-            }
-            if line.starts_with("#endif") {
-                conditions.pop();
-                continue;
-            }
-            if line.is_empty() || line.starts_with("#section") || conditions.contains(&false) {
-                continue;
-            }
-            if let Some(sub) = line.strip_prefix("#sub") {
-                let text = self.render(sub.trim());
-                if let Some(step) = legs.last_mut().and_then(|leg| leg.steps.last_mut()) {
-                    step.sub_steps.push(text);
+        for (act, source) in acts.iter().enumerate() {
+            // One entry per open #ifdef/#ifndef: whether its lines apply.
+            let mut conditions: Vec<bool> = Vec::new();
+            for (n, line) in source.lines().enumerate() {
+                self.line = (act + 1, n + 1);
+                let line = line.trim();
+                if let Some(name) = line.strip_prefix("#ifdef ") {
+                    conditions.push(defines.contains(&name.trim()));
+                    continue;
                 }
-                continue;
+                if let Some(name) = line.strip_prefix("#ifndef ") {
+                    conditions.push(!defines.contains(&name.trim()));
+                    continue;
+                }
+                if line.starts_with("#endif") {
+                    if conditions.pop().is_none() {
+                        self.problem("#endif without #ifdef");
+                    }
+                    continue;
+                }
+                if line.is_empty() || line.starts_with("#section") || conditions.contains(&false) {
+                    continue;
+                }
+                if let Some(sub) = line.strip_prefix("#sub") {
+                    let text = self.render(sub.trim());
+                    match legs.last_mut().and_then(|leg| leg.steps.last_mut()) {
+                        Some(step) => step.sub_steps.push(text),
+                        None => self.problem("#sub before any Step"),
+                    }
+                    continue;
+                }
+                // A Step belongs to the Area the Character is in before doing it.
+                let new_leg = legs.last().is_none_or(|leg| leg.area_id != self.area);
+                if new_leg {
+                    legs.push(Leg { area_id: self.area.clone(), steps: Vec::new() });
+                }
+                let step = Step { text: self.render(line), sub_steps: Vec::new() };
+                legs.last_mut().expect("pushed above").steps.push(step);
             }
-            // A Step belongs to the Area the Character is in before doing it.
-            let new_leg = legs.last().is_none_or(|leg| leg.area_id != self.area);
-            if new_leg {
-                legs.push(Leg { area_id: self.area.clone(), steps: Vec::new() });
+            if !conditions.is_empty() {
+                self.problem("#ifdef without #endif");
             }
-            let step = Step { text: self.render(line), sub_steps: Vec::new() };
-            legs.last_mut().expect("pushed above").steps.push(step);
         }
         legs
+    }
+
+    fn problem(&mut self, what: &str) {
+        let (act, line) = self.line;
+        self.problems.push(format!("act-{act}.txt:{line}: {what}"));
     }
 
     /// Renders a line's text and `{…}` fragments, dropping any `#` comment,
@@ -126,7 +224,10 @@ impl Parser<'_> {
                 rest = "";
                 break;
             }
-            let Some(end) = rest[i..].find('}') else { break };
+            let Some(end) = rest[i..].find('}') else {
+                self.problem("unclosed {");
+                break;
+            };
             let start = out.len();
             self.fragment(&rest[i + 1..i + end], &mut out);
             // `3x{quest_text|Glyph}` reads "3x Glyph" as plain text.
@@ -147,37 +248,102 @@ impl Parser<'_> {
         match kind {
             "enter" => {
                 self.move_to(arg);
-                out.push_str(self.area_name(arg));
+                self.push_area_name(arg, out);
             }
             "waypoint" if !arg.is_empty() => {
                 self.move_to(arg);
                 out.push_str("Waypoint ➞ ");
-                out.push_str(self.area_name(arg));
+                self.push_area_name(arg, out);
             }
             "waypoint" | "waypoint_get" => out.push_str("Waypoint"),
             "logout" => {
                 self.area.clone_from(&self.town);
                 out.push_str("Logout ➞ ");
-                out.push_str(self.area_name(&self.town));
+                self.push_area_name(&self.town.clone(), out);
             }
-            "area" => out.push_str(self.area_name(arg)),
-            "quest" => out.push_str(self.quests.get(arg).map_or(arg, |q| &q.name)),
+            "portal" => self.portal(arg, out),
+            "ascend" => {
+                self.area.clone_from(&self.town);
+                out.push_str("Ascend (");
+                out.push_str(arg);
+                out.push_str(" Labyrinth)");
+            }
+            "crafting" => {
+                let id = if arg.is_empty() { self.area.as_str() } else { arg };
+                match self.areas.get(id) {
+                    Some(area) => {
+                        out.push_str("Crafting: ");
+                        out.push_str(&area.crafting_recipes.join(", "));
+                    }
+                    None => self.problem(&format!("unknown area {id}")),
+                }
+            }
+            "area" => self.push_area_name(arg, out),
+            "quest" => match self.quests.get(arg) {
+                Some(quest) => out.push_str(&quest.name),
+                None => self.problem(&format!("unknown quest {arg}")),
+            },
             "trial" => out.push_str("Trial of Ascendancy"),
             "dir" => out.push_str(direction(arg)),
-            // kill, arena, quest_text, generic: the argument is the text.
-            _ => out.push_str(arg),
+            "kill" | "arena" | "quest_text" | "generic" => out.push_str(arg),
+            _ => self.problem(&format!("unknown fragment {{{fragment}}}")),
+        }
+    }
+
+    /// `{portal|set}` places a portal here; `{portal|use}` goes from town to
+    /// the placed portal's Area, or from elsewhere to that Area's town.
+    fn portal(&mut self, action: &str, out: &mut String) {
+        let Some(here) = self.areas.get(&self.area) else {
+            return self.problem("portal in an unknown area");
+        };
+        match action {
+            "set" if !here.is_town_area => {
+                self.portal = Some(self.area.clone());
+                out.push_str("Portal");
+            }
+            "use" => {
+                if !here.is_town_area && self.portal.as_ref() != Some(&self.area) {
+                    self.portal = Some(self.area.clone());
+                }
+                let Some(portal) = self.portal.clone() else {
+                    return self.problem("portal used before one was placed");
+                };
+                let destination = if portal == self.area {
+                    here.parent_town_area_id.clone()
+                } else if self.areas.get(&portal).and_then(|a| a.parent_town_area_id.as_ref()) == Some(&self.area) {
+                    self.portal = None;
+                    Some(portal)
+                } else {
+                    None
+                };
+                let Some(destination) = destination else {
+                    return self.problem("portal used away from its town or area");
+                };
+                self.move_to(&destination);
+                out.push_str("Portal ➞ ");
+                self.push_area_name(&destination, out);
+            }
+            _ => self.problem(&format!("unknown portal action {action}")),
         }
     }
 
     fn move_to(&mut self, area_id: &str) {
-        if self.areas.get(area_id).is_some_and(|a| a.is_town_area) {
-            area_id.clone_into(&mut self.town);
+        match self.areas.get(area_id) {
+            Some(area) if area.is_town_area => area_id.clone_into(&mut self.town),
+            Some(_) => {}
+            None => self.problem(&format!("unknown area {area_id}")),
         }
         area_id.clone_into(&mut self.area);
     }
 
-    fn area_name<'a>(&'a self, area_id: &'a str) -> &'a str {
-        self.areas.get(area_id).map_or(area_id, |a| &a.name)
+    fn push_area_name(&mut self, area_id: &str, out: &mut String) {
+        match self.areas.get(area_id) {
+            Some(area) => out.push_str(&area.name),
+            None => {
+                self.problem(&format!("unknown area {area_id}"));
+                out.push_str(area_id);
+            }
+        }
     }
 }
 
@@ -253,12 +419,18 @@ impl RouteProgress {
     /// (hideouts aren't in it).
     pub fn character_area_name(&self) -> Option<&str> {
         let id = self.off_route_area.as_ref().unwrap_or(&self.route.legs[self.current].area_id);
-        self.route.area_names.get(id).map(String::as_str)
+        self.route.areas.get(id).map(|a| a.name.as_str())
     }
 
+    /// Name of the Area the shown Steps are for.
     pub fn area_name(&self) -> &str {
         let id = &self.route.legs[self.current].area_id;
-        self.route.area_names.get(id).map_or(id, String::as_str)
+        self.route.areas.get(id).map_or(id, |a| &a.name)
+    }
+
+    /// Act of the Area the shown Steps are for.
+    pub fn act(&self) -> u32 {
+        self.route.areas.get(&self.route.legs[self.current].area_id).map_or(0, |a| a.act)
     }
 
     pub fn steps(&self) -> &[Step] {
