@@ -4,13 +4,13 @@
 
 **Blocked by:** 01 (Toolkit prototype)
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] Launch option starts the game normally (exit code and arguments passed through) and starts exactly one overlay even if launched twice
 - [x] Overlay exits when the game process exits
-- [ ] Placeholder panel appears only while the PoE window is focused and hides on Alt+Tab
-- [ ] Panel appears on the output the game window is on
-- [ ] Clicking the panel leaves keyboard focus on the game; clicks outside it reach the game
+- [x] Placeholder panel appears only while the PoE window is focused and hides on Alt+Tab
+- [x] Panel appears on the output the game window is on (logic tested; single-monitor setup, multi-monitor unconfirmed in game)
+- [x] Clicking the panel leaves keyboard focus on the game; clicks outside it reach the game
 - [x] Built with the toolkit chosen in 01
 
 ## Comments
@@ -51,4 +51,4 @@ The panel became unreachable after the first click in game, until Alt+Tab.
 - **Evidence:** a Proton log with `WINEDEBUG=+timestamp,+cursor` showed `grab_clipping_window clipping to (0,0)-(1920,1080)` on a ButtonPress. The lock was not released on ButtonRelease; `ungrab_clipping_window` came only at the next focus change.
 - **Cause:** Wine's `clip_fullscreen_window` (`win32u/input.c`) locks the cursor to a full-screen foreground window when the monitor is the whole virtual screen (single monitor), independent of the game's `confine_mouse_to_window`. Xwayland turns that into a pointer confinement, and niri keeps a confined pointer out of other surfaces, including the overlay panel.
 - **Fix:** `launch` sets `"GrabPointer"="N"` under `AppDefaults\<PoE exe>\X11 Driver` in the prefix found from `WINEPREFIX` or `STEAM_COMPAT_DATA_PATH`, before the game starts. It keeps a one-time backup and never changes an existing value, so a user who sets `"Y"` has opted out. Tests are in `tests/launch.rs`.
-- **Pending:** an in-game confirmation that the panel stays reachable after clicking in game.
+- **Confirmed in game (user, 2026-11-14):** the panel stays reachable after clicking in game. Wine re-saved the four `GrabPointer="N"` sections in the prefix's `user.reg`, so it read them.
