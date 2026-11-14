@@ -1,5 +1,7 @@
 //! Events read from the game's Client.txt log.
 
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -7,7 +9,7 @@ pub enum LogEvent {
     /// The Character is entering an Area, identified by the game's area ID.
     AreaEntered { area_id: String },
     /// A Character reached a new level; the only line naming the Character.
-    CharacterLevelled { name: String, class: String, level: u32 },
+    CharacterLevelled { name: String },
 }
 
 /// Parses one Client.txt line: `<date> <time> <ticks> <hex> [<LEVEL> Client <pid>] <message>`.
@@ -30,18 +32,41 @@ fn area_entered(message: &str) -> Option<LogEvent> {
 fn character_levelled(message: &str) -> Option<LogEvent> {
     let rest = message.strip_prefix(": ")?;
     let (who, level) = rest.split_once(" is now level ")?;
-    let (name, class) = who.strip_suffix(')')?.split_once(" (")?;
-    Some(LogEvent::CharacterLevelled { name: name.to_owned(), class: class.to_owned(), level: level.trim().parse().ok()? })
+    level.trim().parse::<u32>().ok()?;
+    let (name, _class) = who.strip_suffix(')')?.split_once(" (")?;
+    Some(LogEvent::CharacterLevelled { name: name.to_owned() })
 }
 
 /// The Character of the latest level-up already in the log, if any: the best
-/// guess at who is playing before this session logs a level-up.
+/// guess at who is playing before this session logs a level-up. Reads from
+/// the end in chunks, since Client.txt grows to hundreds of megabytes.
 pub fn last_character(log: &Path) -> Option<String> {
-    let bytes = std::fs::read(log).ok()?;
-    String::from_utf8_lossy(&bytes).rsplit(['\r', '\n']).find_map(|line| match parse_line(line)? {
-        LogEvent::CharacterLevelled { name, .. } => Some(name),
-        LogEvent::AreaEntered { .. } => None,
-    })
+    const CHUNK: u64 = 64 * 1024;
+    let mut file = File::open(log).ok()?;
+    let mut end = file.metadata().ok()?.len();
+    // Bytes before the first line break seen so far: possibly a partial line.
+    let mut carry: Vec<u8> = Vec::new();
+    let mut buf = Vec::new();
+    while end > 0 {
+        let start = end.saturating_sub(CHUNK);
+        buf.resize((end - start) as usize, 0);
+        file.seek(SeekFrom::Start(start)).ok()?;
+        file.read_exact(&mut buf).ok()?;
+        buf.extend_from_slice(&carry);
+        let mut lines = buf.rsplit(|b| matches!(b, b'\r' | b'\n')).peekable();
+        while let Some(line) = lines.next() {
+            if lines.peek().is_none() && start > 0 {
+                carry.clear();
+                carry.extend_from_slice(line);
+                break;
+            }
+            if let Some(LogEvent::CharacterLevelled { name }) = std::str::from_utf8(line).ok().and_then(parse_line) {
+                return Some(name);
+            }
+        }
+        end = start;
+    }
+    None
 }
 
 /// The text after the `[… Client <pid>] ` tag.

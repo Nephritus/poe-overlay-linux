@@ -2,7 +2,7 @@
 
 use gtk::prelude::*;
 
-use crate::poe1::leveling::Leveling;
+use crate::poe1::route::RouteProgress;
 
 pub const CSS: &str = "
 .route-area { font-weight: bold; color: rgb(230, 190, 110); }
@@ -69,10 +69,10 @@ impl RoutePanel {
         self.next.connect_clicked(move |_| f());
     }
 
-    pub fn show(&self, leveling: &Leveling) {
-        let progress = leveling.progress();
+    /// Shows `progress` for `character` (`None`: not identified yet).
+    pub fn show(&self, progress: &RouteProgress, character: Option<&str>) {
         self.area.set_label(&format!("Act {} · {}", progress.act(), progress.area_name()));
-        self.character.set_label(match leveling.character() {
+        self.character.set_label(match character {
             Some(name) => name,
             None => "Character not known yet: progress is saved after its next level-up",
         });

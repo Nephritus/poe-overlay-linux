@@ -47,6 +47,17 @@ library = true        # include the Library in Act 3
 
 Changes apply the next time the game starts. If the file has a mistake, the overlay reports it and uses the defaults.
 
+### Progress per Character
+
+The ◀ and ▶ buttons on the panel move to the previous or next Area visit when the Route guesses wrong. Clicking them doesn't take focus from the game.
+
+Progress is saved per Character in `~/.local/state/poe-overlay/progress.toml` (or under `$XDG_STATE_HOME`) and restored the next time the game starts. `Client.txt` names your Character only when it levels up, so:
+
+- At startup, the overlay assumes the Character from the latest level-up already in `Client.txt`.
+- A level-up of a different Character switches to that Character's saved progress. The previous Character keeps its position from its own last level-up, because Areas entered in between may belong to either.
+- A brand-new Character takes over the progress made so far in the session once it first levels up.
+- In a party, another player's level-up may switch Characters. If that happens, use ◀ ▶ to correct it.
+
 ## Credits
 
 Leveling Route data comes from [exile-leveling](https://github.com/HeartofPhos/exile-leveling) by HeartofPhos, used under the MIT License (see `data/exile-leveling/LICENSE`). Game names and text belong to Grinding Gear Games. `poe-overlay credits` prints this notice and the license.

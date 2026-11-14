@@ -11,6 +11,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +23,9 @@ use super::route::{Position, Route, RouteProgress};
 pub struct ProgressStore {
     path: PathBuf,
     characters: BTreeMap<String, Position>,
+    /// False when the file exists but couldn't be read or moved aside:
+    /// saving would destroy it.
+    writable: bool,
 }
 
 #[derive(Default, Deserialize)]
@@ -47,43 +51,65 @@ impl ProgressStore {
         dir.join("poe-overlay/progress.toml")
     }
 
-    /// Loads `path`; a missing file is an empty store. An unreadable file is
-    /// moved aside to `<name>.corrupt` (never overwritten) and the store
-    /// starts empty, with a warning for the player.
+    /// Loads `path`; a missing file is an empty store. A file that isn't
+    /// valid is moved aside to `<name>.corrupt-<unix time>` and the store
+    /// starts empty. If it can't be read or moved aside, nothing is saved
+    /// this session so it is never overwritten. Both come with a warning.
     pub fn open(path: PathBuf) -> (ProgressStore, Option<String>) {
-        let parsed = match fs::read_to_string(&path) {
-            Ok(text) => toml::from_str::<StoreFile>(&text).map_err(|err| err.to_string()),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(StoreFile::default()),
-            Err(err) => Err(err.to_string()),
-        };
-        let (file, warning) = match parsed {
-            Ok(file) => (file, None),
+        let empty = |path, writable| ProgressStore { path, characters: BTreeMap::new(), writable };
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return (empty(path, true), None),
             Err(err) => {
-                let aside = path.with_extension("toml.corrupt");
-                let kept = match fs::rename(&path, &aside) {
-                    Ok(()) => format!("kept as {}", aside.display()),
-                    Err(rename) => format!("could not move it aside: {rename}"),
-                };
-                (StoreFile::default(), Some(format!("saved progress {} unreadable ({err}); {kept}", path.display())))
+                let warning = format!("cannot read saved progress {}: {err}; progress won't be saved", path.display());
+                return (empty(path, false), Some(warning));
             }
         };
-        (ProgressStore { path, characters: file.characters }, warning)
+        let err = match toml::from_str::<StoreFile>(&text) {
+            Ok(file) => return (ProgressStore { path, characters: file.characters, writable: true }, None),
+            Err(err) => err,
+        };
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        let aside = path.with_extension(format!("toml.corrupt-{stamp}"));
+        let (writable, outcome) = match fs::rename(&path, &aside) {
+            Ok(()) => (true, format!("kept as {}", aside.display())),
+            Err(rename) => (false, format!("could not move it aside ({rename}); progress won't be saved")),
+        };
+        let warning = format!("saved progress {} is invalid ({err}); {outcome}", path.display());
+        (empty(path, writable), Some(warning))
     }
 
     fn get(&self, character: &str) -> Option<&Position> {
         self.characters.get(character)
     }
 
-    fn set(&mut self, character: &str, position: Option<Position>) {
-        match position {
-            Some(position) if self.characters.get(character) == Some(&position) => return,
-            Some(position) => {
-                self.characters.insert(character.to_owned(), position);
+    /// Records where `progress` is for `character`; writes only on change.
+    fn record(&mut self, character: &str, progress: &RouteProgress) {
+        match self.characters.get_mut(character) {
+            Some(saved) if progress.is_at(saved) => return,
+            Some(saved) => progress.save_into(saved),
+            None => {
+                self.characters.insert(character.to_owned(), progress.position());
             }
-            None if self.characters.remove(character).is_none() => return,
-            None => {}
         }
-        if let Err(err) = self.save() {
+        self.write();
+    }
+
+    /// Puts `character` back to `position`, or forgets it if `None`.
+    fn reset(&mut self, character: &str, position: Option<Position>) {
+        let changed = match position {
+            Some(position) => self.characters.insert(character.to_owned(), position.clone()) != Some(position),
+            None => self.characters.remove(character).is_some(),
+        };
+        if changed {
+            self.write();
+        }
+    }
+
+    fn write(&self) {
+        if self.writable
+            && let Err(err) = self.save()
+        {
             eprintln!("poe-overlay: cannot save progress to {}: {err}", self.path.display());
         }
     }
@@ -116,10 +142,8 @@ impl Leveling {
     /// its saved progress, if any.
     pub fn new(route: Route, store: ProgressStore, assumed: Option<String>) -> Self {
         let mut progress = RouteProgress::new(route);
-        let confirmed = assumed.as_deref().and_then(|name| store.get(name)).cloned();
-        if let Some(position) = &confirmed {
-            progress.restore(position);
-        }
+        let saved = assumed.as_deref().and_then(|name| store.get(name));
+        let confirmed = saved.filter(|position| progress.restore(position)).cloned();
         Self { progress, store, character: assumed, confirmed, last_area: None }
     }
 
@@ -161,33 +185,35 @@ impl Leveling {
 
     fn identify(&mut self, name: &str) -> bool {
         if self.character.as_deref() == Some(name) {
-            self.confirmed = Some(self.progress.position());
+            self.confirm();
             return false;
         }
         if let Some(previous) = self.character.take() {
-            self.store.set(&previous, self.confirmed.take());
+            self.store.reset(&previous, self.confirmed.take());
+        }
+        // A returning Character resumes its saved visit of the Area it's in;
+        // a new one (or one whose saved Area left the Route) takes the
+        // progress made so far this session.
+        let resumed = self.store.get(name).is_some_and(|saved| self.progress.restore(saved));
+        if resumed && let Some(area) = &self.last_area {
+            self.progress.enter_area(area);
         }
         self.character = Some(name.to_owned());
-        let changed = match self.store.get(name).cloned() {
-            // A returning Character: its saved visit of the Area it's in.
-            Some(saved) => {
-                self.progress.restore(&saved);
-                if let Some(area) = self.last_area.clone() {
-                    self.progress.enter_area(&area);
-                }
-                true
-            }
-            // A new Character takes the progress made so far this session.
-            None => false,
-        };
         self.save();
-        self.confirmed = Some(self.progress.position());
-        changed
+        self.confirm();
+        resumed
+    }
+
+    fn confirm(&mut self) {
+        match &mut self.confirmed {
+            Some(position) => self.progress.save_into(position),
+            None => self.confirmed = Some(self.progress.position()),
+        }
     }
 
     fn save(&mut self) {
         if let Some(name) = &self.character {
-            self.store.set(name, Some(self.progress.position()));
+            self.store.record(name, &self.progress);
         }
     }
 }

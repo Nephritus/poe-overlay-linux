@@ -26,7 +26,7 @@ fn enter(leveling: &mut Leveling, area_ids: &[&str]) {
 }
 
 fn level_up(leveling: &mut Leveling, name: &str) {
-    leveling.handle(&LogEvent::CharacterLevelled { name: name.into(), class: "Shadow".into(), level: 5 });
+    leveling.handle(&LogEvent::CharacterLevelled { name: name.into() });
 }
 
 fn area(leveling: &Leveling) -> &str {
@@ -185,7 +185,13 @@ fn unreadable_progress_file_is_kept_aside_and_progress_starts_fresh() {
     let (store, warning) = ProgressStore::open(store_path(dir.path()));
 
     assert!(warning.is_some());
-    assert!(dir.path().join("progress.toml.corrupt").exists());
+    let kept: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .filter(|name| name.starts_with("progress.toml.corrupt-"))
+        .collect();
+    assert_eq!(kept.len(), 1);
+    assert_eq!(std::fs::read_to_string(dir.path().join(&kept[0])).unwrap(), "not = [valid");
     let session = Leveling::new(Route::campaign(&RouteOptions::default()), store, Some("jay".into()));
     assert_eq!(area(&session), "The Twilight Strand");
 }

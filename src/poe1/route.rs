@@ -499,6 +499,17 @@ impl RouteProgress {
         true
     }
 
+    /// Whether `position` is where the progress is now.
+    pub fn is_at(&self, position: &Position) -> bool {
+        position.leg == self.current && position.area_id == self.route.legs[self.current].area_id
+    }
+
+    /// Overwrites `position` with the current one, reusing its buffer.
+    pub fn save_into(&self, position: &mut Position) {
+        position.leg = self.current;
+        position.area_id.clone_from(&self.route.legs[self.current].area_id);
+    }
+
     pub fn position(&self) -> Position {
         Position { leg: self.current, area_id: self.route.legs[self.current].area_id.clone() }
     }

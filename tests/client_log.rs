@@ -49,7 +49,7 @@ fn level_up_names_the_character() {
 
     assert_eq!(
         parse_line(line),
-        Some(LogEvent::CharacterLevelled { name: "ExampleExile".into(), class: "Shadow".into(), level: 3 })
+        Some(LogEvent::CharacterLevelled { name: "ExampleExile".into() })
     );
 }
 
@@ -90,4 +90,34 @@ fn no_last_character_without_level_ups_or_log() {
 
     std::fs::write(&log, "2026/11/14 14:24:49 ***** LOG FILE OPENING *****\r\n").unwrap();
     assert_eq!(last_character(&log), None);
+}
+
+#[test]
+fn last_character_is_found_far_back_in_a_long_log() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("Client.txt");
+    let mut text = String::from("2026/11/14 14:55:42 12433885 cffb06be [INFO Client 312] : ExampleExile (Shadow) is now level 3\r\n");
+    for i in 0..20_000 {
+        text += &format!("2026/11/14 15:03:07 {i} 54ee9dc3 [INFO Client 312] [WINDOW] Lost focus\r\n");
+    }
+    std::fs::write(&log, text).unwrap();
+
+    assert_eq!(last_character(&log).as_deref(), Some("ExampleExile"));
+}
+
+#[test]
+fn level_up_line_split_across_read_chunks_is_still_found() {
+    // Places the level-up line across the 64 KiB boundary counted from the end.
+    let level_up = "2026/11/14 14:55:42 12433885 cffb06be [INFO Client 312] : ExampleExile (Shadow) is now level 3\r\n";
+    let filler_line = "2026/11/14 15:03:07 12878884 54ee9dc3 [INFO Client 312] [WINDOW] Lost focus\r\n";
+    let mut tail = String::new();
+    while tail.len() + level_up.len() / 2 < 64 * 1024 {
+        tail += filler_line;
+    }
+    let tail = &tail[tail.len() - (64 * 1024 - level_up.len() / 2)..];
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("Client.txt");
+    std::fs::write(&log, format!("{filler_line}{level_up}{tail}")).unwrap();
+
+    assert_eq!(last_character(&log).as_deref(), Some("ExampleExile"));
 }

@@ -122,14 +122,14 @@ fn follow_route(panel: RoutePanel) {
     let log = poe1::client_log_path(&steam::default_roots());
     let assumed = log.as_deref().and_then(client_log::last_character);
     let leveling = Rc::new(RefCell::new(Leveling::new(route, store, assumed)));
-    panel.show(&leveling.borrow());
+    show(&panel, &leveling.borrow());
 
     let on_click = |step: fn(&mut Leveling) -> bool| {
         let (leveling, panel) = (leveling.clone(), panel.clone());
         move || {
             let mut leveling = leveling.borrow_mut();
             if step(&mut leveling) {
-                panel.show(&leveling);
+                show(&panel, &leveling);
             }
         }
     };
@@ -146,10 +146,14 @@ fn follow_route(panel: RoutePanel) {
             let Some(event) = client_log::parse_line(&line) else { continue };
             let mut leveling = leveling.borrow_mut();
             if leveling.handle(&event) {
-                panel.show(&leveling);
+                show(&panel, &leveling);
             }
         }
     });
+}
+
+fn show(panel: &RoutePanel, leveling: &Leveling) {
+    panel.show(leveling.progress(), leveling.character());
 }
 
 // Route panel position, in surface-local logical pixels.
