@@ -102,7 +102,12 @@ fn activate(app: &gtk::Application, game_exited: async_channel::Receiver<()>) {
 
 /// Shows the Route and moves it along as Client.txt reports Area changes.
 fn follow_route(panel: RoutePanel) {
-    let route = Route::campaign(&Config::load().route);
+    let config = Config::load().unwrap_or_else(|err| {
+        eprintln!("poe-overlay: {err}; using defaults");
+        panel.set_note(&format!("Settings file has a mistake, using defaults: {err}"));
+        Config::default()
+    });
+    let route = Route::campaign(&config.route);
     for problem in route.problems() {
         eprintln!("poe-overlay: Route data: {problem}");
     }

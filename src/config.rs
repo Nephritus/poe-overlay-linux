@@ -14,28 +14,24 @@ pub struct Config {
 }
 
 impl Config {
-    /// Reads the config file. An unreadable or invalid file is reported on
-    /// stderr and the defaults are used, so a typo never stops the overlay.
-    pub fn load() -> Config {
-        let Some(path) = path() else { return Config::default() };
+    /// Reads the config file; a missing file is the defaults. An unreadable
+    /// or invalid file is an error message naming the file, so callers can
+    /// fall back to the defaults and tell the player.
+    pub fn load() -> Result<Config, String> {
+        let Some(path) = path() else { return Ok(Config::default()) };
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Config::default(),
-            Err(err) => {
-                eprintln!("poe-overlay: cannot read {}: {err}; using defaults", path.display());
-                return Config::default();
-            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Config::default()),
+            Err(err) => return Err(format!("cannot read {}: {err}", path.display())),
         };
-        toml::from_str(&text).unwrap_or_else(|err| {
-            eprintln!("poe-overlay: {}: {err}; using defaults", path.display());
-            Config::default()
-        })
+        toml::from_str(&text).map_err(|err| format!("{}: {err}", path.display()))
     }
 }
 
 fn path() -> Option<PathBuf> {
-    let dir = match std::env::var_os("XDG_CONFIG_HOME").filter(|d| !d.is_empty()) {
-        Some(dir) => PathBuf::from(dir),
+    // The XDG spec says to ignore a relative XDG_CONFIG_HOME.
+    let dir = match std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).filter(|d| d.is_absolute()) {
+        Some(dir) => dir,
         None => PathBuf::from(std::env::var_os("HOME")?).join(".config"),
     };
     Some(dir.join("poe-overlay/config.toml"))

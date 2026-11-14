@@ -61,9 +61,14 @@ impl RoutePanel {
         }
     }
 
-    /// A problem that stops the Route from following the game.
+    /// Adds a problem the player should know about (e.g. the Route can't
+    /// follow the game); notes stack.
     pub fn set_note(&self, text: &str) {
-        self.note.set_label(text);
+        let label = match self.note.label().as_str() {
+            "" => text.to_owned(),
+            existing => format!("{existing}\n{text}"),
+        };
+        self.note.set_label(&label);
         self.note.set_visible(true);
     }
 }

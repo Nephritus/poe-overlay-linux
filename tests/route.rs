@@ -223,3 +223,25 @@ fn bandit_choice_changes_the_steps() {
     assert_eq!(after_the_wetlands(Bandit::KillAll), "Kill Alira Darktongue, take Alira's Amulet");
     assert_eq!(after_the_wetlands(Bandit::Alira), "Help Alira Darktongue, take The Apex");
 }
+
+#[test]
+fn header_act_is_the_routes_act_not_the_areas() {
+    // Aspirants' Plaza belongs to Act 3's data but is first visited in Act 4.
+    let mut progress = league_start();
+
+    progress.enter_area("Labyrinth_Airlock");
+
+    assert_eq!((progress.act(), progress.area_name()), (4, "Aspirants' Plaza"));
+}
+
+#[test]
+fn first_town_trip_after_starting_mid_campaign_returns_to_where_it_left() {
+    // Overlay started with the Character already in Act 1's Submerged Passage.
+    let mut progress = league_start();
+    progress.enter_area("1_1_4_1");
+    assert_eq!(texts(progress.steps()), ["Waypoint ➞ The Coast"]);
+
+    walk(&mut progress, &["1_1_town", "1_1_4_1"]);
+
+    assert_eq!(texts(progress.steps()), ["Waypoint ➞ The Coast"]);
+}

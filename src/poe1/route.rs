@@ -69,20 +69,17 @@ pub enum Bandit {
 }
 
 impl RouteOptions {
-    fn defines(&self) -> Vec<&'static str> {
-        let mut defines = vec![match self.bandit {
-            Bandit::KillAll => "BANDIT_KILL",
-            Bandit::Oak => "BANDIT_OAK",
-            Bandit::Kraityn => "BANDIT_KRAITYN",
-            Bandit::Alira => "BANDIT_ALIRA",
-        }];
-        if self.league_start {
-            defines.push("LEAGUE_START");
+    /// Whether a route `#ifdef` name is on in this variant.
+    fn is_defined(&self, name: &str) -> bool {
+        match name {
+            "LEAGUE_START" => self.league_start,
+            "LIBRARY" => self.library,
+            "BANDIT_KILL" => self.bandit == Bandit::KillAll,
+            "BANDIT_OAK" => self.bandit == Bandit::Oak,
+            "BANDIT_KRAITYN" => self.bandit == Bandit::Kraityn,
+            "BANDIT_ALIRA" => self.bandit == Bandit::Alira,
+            _ => false,
         }
-        if self.library {
-            defines.push("LIBRARY");
-        }
-        defines
     }
 }
 
@@ -96,6 +93,9 @@ pub struct Step {
 #[derive(Debug)]
 struct Leg {
     area_id: String,
+    /// The act of the Route this Leg is in, which can differ from the Area's
+    /// own act (Aspirants' Plaza is an Act 3 Area visited in Acts 4, 7, 10).
+    act: u32,
     steps: Vec<Step>,
 }
 
@@ -109,7 +109,6 @@ pub struct Route {
 #[derive(Debug, Deserialize)]
 struct Area {
     name: String,
-    act: u32,
     is_town_area: bool,
     parent_town_area_id: Option<String>,
     crafting_recipes: Vec<String>,
@@ -132,9 +131,9 @@ impl Route {
             town: START_TOWN.into(),
             portal: None,
             problems: Vec::new(),
-            line: (0, 0),
+            at: (0, 0),
         };
-        let legs = parser.parse(&ACTS, &options.defines());
+        let legs = parser.parse(&ACTS, options);
         let problems = parser.problems;
         Route { legs, areas, problems }
     }
@@ -155,25 +154,25 @@ struct Parser<'a> {
     /// The Area a placed portal leads back to.
     portal: Option<String>,
     problems: Vec<String>,
-    /// Current act file and 1-based line, for problem reports.
-    line: (usize, usize),
+    /// (act, line) being parsed, both 1-based, for problem reports.
+    at: (usize, usize),
 }
 
-impl Parser<'_> {
-    fn parse(&mut self, acts: &[&str], defines: &[&str]) -> Vec<Leg> {
+impl<'a> Parser<'a> {
+    fn parse(&mut self, acts: &[&str], options: &RouteOptions) -> Vec<Leg> {
         let mut legs: Vec<Leg> = Vec::new();
         for (act, source) in acts.iter().enumerate() {
             // One entry per open #ifdef/#ifndef: whether its lines apply.
             let mut conditions: Vec<bool> = Vec::new();
             for (n, line) in source.lines().enumerate() {
-                self.line = (act + 1, n + 1);
+                self.at = (act + 1, n + 1);
                 let line = line.trim();
                 if let Some(name) = line.strip_prefix("#ifdef ") {
-                    conditions.push(defines.contains(&name.trim()));
+                    conditions.push(options.is_defined(name.trim()));
                     continue;
                 }
                 if let Some(name) = line.strip_prefix("#ifndef ") {
-                    conditions.push(!defines.contains(&name.trim()));
+                    conditions.push(!options.is_defined(name.trim()));
                     continue;
                 }
                 if line.starts_with("#endif") {
@@ -196,7 +195,7 @@ impl Parser<'_> {
                 // A Step belongs to the Area the Character is in before doing it.
                 let new_leg = legs.last().is_none_or(|leg| leg.area_id != self.area);
                 if new_leg {
-                    legs.push(Leg { area_id: self.area.clone(), steps: Vec::new() });
+                    legs.push(Leg { area_id: self.area.clone(), act: act as u32 + 1, steps: Vec::new() });
                 }
                 let step = Step { text: self.render(line), sub_steps: Vec::new() };
                 legs.last_mut().expect("pushed above").steps.push(step);
@@ -209,7 +208,7 @@ impl Parser<'_> {
     }
 
     fn problem(&mut self, what: &str) {
-        let (act, line) = self.line;
+        let (act, line) = self.at;
         self.problems.push(format!("act-{act}.txt:{line}: {what}"));
     }
 
@@ -242,24 +241,26 @@ impl Parser<'_> {
     }
 
     fn fragment(&mut self, fragment: &str, out: &mut String) {
+        let areas = self.areas;
         let mut parts = fragment.split('|');
         let kind = parts.next().unwrap_or_default();
         let arg = parts.next().unwrap_or_default();
         match kind {
             "enter" => {
                 self.move_to(arg);
-                self.push_area_name(arg, out);
+                out.push_str(self.name_of(arg));
             }
             "waypoint" if !arg.is_empty() => {
                 self.move_to(arg);
                 out.push_str("Waypoint ➞ ");
-                self.push_area_name(arg, out);
+                out.push_str(self.name_of(arg));
             }
             "waypoint" | "waypoint_get" => out.push_str("Waypoint"),
             "logout" => {
                 self.area.clone_from(&self.town);
+                self.portal = None;
                 out.push_str("Logout ➞ ");
-                self.push_area_name(&self.town.clone(), out);
+                out.push_str(areas.get(&self.town).map_or("town", |a| &a.name));
             }
             "portal" => self.portal(arg, out),
             "ascend" => {
@@ -270,15 +271,18 @@ impl Parser<'_> {
             }
             "crafting" => {
                 let id = if arg.is_empty() { self.area.as_str() } else { arg };
-                match self.areas.get(id) {
-                    Some(area) => {
-                        out.push_str("Crafting: ");
-                        out.push_str(&area.crafting_recipes.join(", "));
+                let Some(area) = areas.get(id) else {
+                    return self.unknown_area(arg);
+                };
+                out.push_str("Crafting: ");
+                for (i, recipe) in area.crafting_recipes.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(", ");
                     }
-                    None => self.problem(&format!("unknown area {id}")),
+                    out.push_str(recipe);
                 }
             }
-            "area" => self.push_area_name(arg, out),
+            "area" => out.push_str(self.name_of(arg)),
             "quest" => match self.quests.get(arg) {
                 Some(quest) => out.push_str(&quest.name),
                 None => self.problem(&format!("unknown quest {arg}")),
@@ -293,37 +297,49 @@ impl Parser<'_> {
     /// `{portal|set}` places a portal here; `{portal|use}` goes from town to
     /// the placed portal's Area, or from elsewhere to that Area's town.
     fn portal(&mut self, action: &str, out: &mut String) {
-        let Some(here) = self.areas.get(&self.area) else {
+        let areas = self.areas;
+        let Some(here) = areas.get(&self.area) else {
             return self.problem("portal in an unknown area");
         };
         match action {
-            "set" if !here.is_town_area => {
-                self.portal = Some(self.area.clone());
+            "set" if here.is_town_area => self.problem("portal set in a town"),
+            "set" => {
+                self.place_portal();
                 out.push_str("Portal");
             }
             "use" => {
                 if !here.is_town_area && self.portal.as_ref() != Some(&self.area) {
-                    self.portal = Some(self.area.clone());
+                    self.place_portal();
                 }
-                let Some(portal) = self.portal.clone() else {
+                let Some(portal) = self.portal.as_deref() else {
                     return self.problem("portal used before one was placed");
                 };
-                let destination = if portal == self.area {
-                    here.parent_town_area_id.clone()
-                } else if self.areas.get(&portal).and_then(|a| a.parent_town_area_id.as_ref()) == Some(&self.area) {
-                    self.portal = None;
-                    Some(portal)
+                let destination: Option<&str> = if portal == self.area {
+                    here.parent_town_area_id.as_deref()
                 } else {
-                    None
+                    areas
+                        .get_key_value(portal)
+                        .filter(|(_, area)| area.parent_town_area_id.as_ref() == Some(&self.area))
+                        .map(|(id, _)| id.as_str())
                 };
                 let Some(destination) = destination else {
                     return self.problem("portal used away from its town or area");
                 };
-                self.move_to(&destination);
+                if destination == portal {
+                    self.portal = None;
+                }
+                self.move_to(destination);
                 out.push_str("Portal ➞ ");
-                self.push_area_name(&destination, out);
+                out.push_str(self.name_of(destination));
             }
             _ => self.problem(&format!("unknown portal action {action}")),
+        }
+    }
+
+    fn place_portal(&mut self) {
+        match &mut self.portal {
+            Some(portal) => portal.clone_from(&self.area),
+            None => self.portal = Some(self.area.clone()),
         }
     }
 
@@ -331,19 +347,28 @@ impl Parser<'_> {
         match self.areas.get(area_id) {
             Some(area) if area.is_town_area => area_id.clone_into(&mut self.town),
             Some(_) => {}
-            None => self.problem(&format!("unknown area {area_id}")),
+            None => self.unknown_area(area_id),
         }
         area_id.clone_into(&mut self.area);
     }
 
-    fn push_area_name(&mut self, area_id: &str, out: &mut String) {
-        match self.areas.get(area_id) {
-            Some(area) => out.push_str(&area.name),
+    /// The Area's name; an unknown ID is reported and shown as is.
+    fn name_of<'s>(&mut self, area_id: &'s str) -> &'s str
+    where
+        'a: 's,
+    {
+        let areas = self.areas;
+        match areas.get(area_id) {
+            Some(area) => &area.name,
             None => {
-                self.problem(&format!("unknown area {area_id}"));
-                out.push_str(area_id);
+                self.unknown_area(area_id);
+                area_id
             }
         }
+    }
+
+    fn unknown_area(&mut self, area_id: &str) {
+        self.problem(&format!("unknown area {area_id}"));
     }
 }
 
@@ -364,11 +389,14 @@ pub struct RouteProgress {
     /// The Leg left by a jump that wasn't a step forward (a town trip,
     /// stepping back); entering its Area again returns there.
     detour_from: Option<usize>,
+    /// Whether an entered Area has placed the Character on the Route yet; the
+    /// first placement (overlay started mid-campaign) is not a detour.
+    placed: bool,
 }
 
 impl RouteProgress {
     pub fn new(route: Route) -> Self {
-        Self { route, current: 0, off_route_area: None, detour_from: None }
+        Self { route, current: 0, off_route_area: None, detour_from: None, placed: false }
     }
 
     /// Moves to the Steps for the Area the Character just entered.
@@ -382,6 +410,7 @@ impl RouteProgress {
         let legs = &self.route.legs;
         let was_off_route = self.off_route_area.take().is_some();
         if legs[self.current].area_id == area_id {
+            self.placed = true;
             return was_off_route;
         }
         if let Some(left) = self.detour_from.filter(|&left| legs[left].area_id == area_id) {
@@ -400,12 +429,13 @@ impl RouteProgress {
             self.off_route_area = Some(area_id.to_owned());
             return true;
         };
-        if next == self.current + 1 {
+        if !self.placed || next == self.current + 1 {
             self.detour_from = None;
         } else if self.detour_from.is_none() {
             self.detour_from = Some(self.current);
         }
         self.current = next;
+        self.placed = true;
         true
     }
 
@@ -428,9 +458,9 @@ impl RouteProgress {
         self.route.areas.get(id).map_or(id, |a| &a.name)
     }
 
-    /// Act of the Area the shown Steps are for.
+    /// The Route's act for the shown Steps.
     pub fn act(&self) -> u32 {
-        self.route.areas.get(&self.route.legs[self.current].area_id).map_or(0, |a| a.act)
+        self.route.legs[self.current].act
     }
 
     pub fn steps(&self) -> &[Step] {
