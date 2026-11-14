@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 const ACTS: [&str; 10] = [
     include_str!("../../data/exile-leveling/routes/act-1.txt"),
@@ -465,5 +465,52 @@ impl RouteProgress {
 
     pub fn steps(&self) -> &[Step] {
         &self.route.legs[self.current].steps
+    }
+}
+
+/// A saved place in a Route: the Leg, and its Area to find it again if the
+/// Route changed (data update, variant change).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Position {
+    pub leg: usize,
+    pub area_id: String,
+}
+
+impl RouteProgress {
+    /// Moves to the next Area visit; `false` at the end of the Route.
+    pub fn next_leg(&mut self) -> bool {
+        self.move_to_leg(self.current + 1)
+    }
+
+    /// Moves to the previous Area visit; `false` at the start of the Route.
+    pub fn previous_leg(&mut self) -> bool {
+        self.current.checked_sub(1).is_some_and(|leg| self.move_to_leg(leg))
+    }
+
+    /// A manual correction: the player is where they say, not on a detour.
+    fn move_to_leg(&mut self, leg: usize) -> bool {
+        if leg >= self.route.legs.len() {
+            return false;
+        }
+        self.current = leg;
+        self.off_route_area = None;
+        self.detour_from = None;
+        self.placed = true;
+        true
+    }
+
+    pub fn position(&self) -> Position {
+        Position { leg: self.current, area_id: self.route.legs[self.current].area_id.clone() }
+    }
+
+    /// Goes to `position`, or to the visit of its Area nearest to it if the
+    /// Route changed since it was saved. `false` if the Route no longer
+    /// visits that Area.
+    pub fn restore(&mut self, position: &Position) -> bool {
+        let legs = &self.route.legs;
+        let nearest = (0..legs.len())
+            .filter(|&i| legs[i].area_id == position.area_id)
+            .min_by_key(|&i| i.abs_diff(position.leg));
+        nearest.is_some_and(|leg| self.move_to_leg(leg))
     }
 }

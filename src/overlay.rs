@@ -9,12 +9,14 @@ use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use rustix::event::{PollFd, PollFlags, poll};
 use rustix::process::{Pid, PidfdFlags, pidfd_open};
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 use crate::config::Config;
 use crate::focus::Visibility;
-use crate::poe1::client_log::{self, LogEvent};
-use crate::poe1::route::{Route, RouteProgress};
+use crate::poe1::client_log;
+use crate::poe1::leveling::{Leveling, ProgressStore};
+use crate::poe1::route::Route;
 use crate::route_panel::{self, RoutePanel};
 use crate::{instance, log_follow, poe1, steam, toplevels};
 
@@ -100,7 +102,8 @@ fn activate(app: &gtk::Application, game_exited: async_channel::Receiver<()>) {
     });
 }
 
-/// Shows the Route and moves it along as Client.txt reports Area changes.
+/// Shows the Route and moves it along as Client.txt reports Area changes and
+/// the player presses Previous/Next; progress is saved per Character.
 fn follow_route(panel: RoutePanel) {
     let config = Config::load().unwrap_or_else(|err| {
         eprintln!("poe-overlay: {err}; using defaults");
@@ -111,19 +114,39 @@ fn follow_route(panel: RoutePanel) {
     for problem in route.problems() {
         eprintln!("poe-overlay: Route data: {problem}");
     }
-    let mut progress = RouteProgress::new(route);
-    panel.show(&progress);
-    let Some(log) = poe1::client_log_path(&steam::default_roots()) else {
+    let (store, warning) = ProgressStore::open(ProgressStore::default_path());
+    if let Some(warning) = warning {
+        eprintln!("poe-overlay: {warning}");
+        panel.set_note(&warning);
+    }
+    let log = poe1::client_log_path(&steam::default_roots());
+    let assumed = log.as_deref().and_then(client_log::last_character);
+    let leveling = Rc::new(RefCell::new(Leveling::new(route, store, assumed)));
+    panel.show(&leveling.borrow());
+
+    let on_click = |step: fn(&mut Leveling) -> bool| {
+        let (leveling, panel) = (leveling.clone(), panel.clone());
+        move || {
+            let mut leveling = leveling.borrow_mut();
+            if step(&mut leveling) {
+                panel.show(&leveling);
+            }
+        }
+    };
+    panel.on_previous(on_click(Leveling::previous_leg));
+    panel.on_next(on_click(Leveling::next_leg));
+
+    let Some(log) = log else {
         panel.set_note("Client.txt not found in any Steam library; the Route won't follow your Areas.");
         return;
     };
     let lines = log_follow::watch(log);
     glib::spawn_future_local(async move {
         while let Ok(line) = lines.recv().await {
-            if let Some(LogEvent::AreaEntered { area_id }) = client_log::parse_line(&line)
-                && progress.enter_area(&area_id)
-            {
-                panel.show(&progress);
+            let Some(event) = client_log::parse_line(&line) else { continue };
+            let mut leveling = leveling.borrow_mut();
+            if leveling.handle(&event) {
+                panel.show(&leveling);
             }
         }
     });

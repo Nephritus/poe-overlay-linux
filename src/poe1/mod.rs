@@ -1,6 +1,7 @@
 //! Path of Exile 1 specifics.
 
 pub mod client_log;
+pub mod leveling;
 pub mod route;
 
 /// Game executables of the Steam and standalone clients.

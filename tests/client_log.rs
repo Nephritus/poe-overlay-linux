@@ -1,7 +1,7 @@
 //! Client.txt lines; all but the chat line were recorded from a real PoE 1
 //! session (2026-11-14).
 
-use poe_overlay::poe1::client_log::{LogEvent, parse_line};
+use poe_overlay::poe1::client_log::{LogEvent, last_character, parse_line};
 
 fn entered(area_id: &str) -> Option<LogEvent> {
     Some(LogEvent::AreaEntered { area_id: area_id.into() })
@@ -41,4 +41,53 @@ fn chat_quoting_the_generating_text_is_not_an_area_change() {
     let line = r#"2026/11/14 15:00:00 12600000 cffb06be [INFO Client 312] #Someone: Generating level 5 area "1_1_4_1" with seed 1"#;
 
     assert_eq!(parse_line(line), None);
+}
+
+#[test]
+fn level_up_names_the_character() {
+    let line = "2026/11/14 14:55:42 12433885 cffb06be [INFO Client 312] : ExampleExile (Shadow) is now level 3";
+
+    assert_eq!(
+        parse_line(line),
+        Some(LogEvent::CharacterLevelled { name: "ExampleExile".into(), class: "Shadow".into(), level: 3 })
+    );
+}
+
+#[test]
+fn deaths_and_chat_mentioning_levels_are_not_level_ups() {
+    let lines = [
+        "2026/11/14 14:51:36 12188726 cffb06be [INFO Client 312] : ExampleExile has been slain.",
+        "2026/11/14 15:00:00 12600000 cffb06be [INFO Client 312] @From buyer: my char (Witch) is now level 90",
+        "2026/11/14 15:00:00 12600000 cffb06be [INFO Client 312] #trader: Someone (Witch) is now level 90",
+    ];
+
+    for line in lines {
+        assert_eq!(parse_line(line), None, "{line}");
+    }
+}
+
+#[test]
+fn last_character_is_the_latest_level_up_in_the_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("Client.txt");
+    std::fs::write(
+        &log,
+        "2026/11/14 14:24:49 ***** LOG FILE OPENING *****\r\n\
+         2026/11/14 14:32:28 11040103 cffb06be [INFO Client 316] : oldchar (Witch) is now level 40\r\n\
+         2026/11/14 14:55:42 12433885 cffb06be [INFO Client 312] : ExampleExile (Shadow) is now level 3\r\n\
+         2026/11/14 14:58:07 12579502 1186a803 [DEBUG Client 312] Generating level 5 area \"1_1_4_1\" with seed 4172808522\r\n",
+    )
+    .unwrap();
+
+    assert_eq!(last_character(&log).as_deref(), Some("ExampleExile"));
+}
+
+#[test]
+fn no_last_character_without_level_ups_or_log() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("Client.txt");
+    assert_eq!(last_character(&log), None);
+
+    std::fs::write(&log, "2026/11/14 14:24:49 ***** LOG FILE OPENING *****\r\n").unwrap();
+    assert_eq!(last_character(&log), None);
 }

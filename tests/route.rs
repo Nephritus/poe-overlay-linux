@@ -245,3 +245,87 @@ fn first_town_trip_after_starting_mid_campaign_returns_to_where_it_left() {
 
     assert_eq!(texts(progress.steps()), ["Waypoint ➞ The Coast"]);
 }
+
+#[test]
+fn next_and_previous_move_between_area_visits() {
+    let mut progress = league_start();
+
+    assert!(progress.next_leg());
+    assert_eq!(progress.area_name(), "Lioneye's Watch");
+    assert!(progress.next_leg());
+    assert_eq!(texts(progress.steps()), ["Get Waypoint", "➞ The Mud Flats"]);
+
+    assert!(progress.previous_leg());
+    assert_eq!(texts(progress.steps()), ["Hand in Enemy at the Gate", "➞ The Coast"]);
+}
+
+#[test]
+fn previous_at_the_start_stays_put() {
+    let mut progress = league_start();
+
+    assert!(!progress.previous_leg());
+    assert_eq!(progress.area_name(), "The Twilight Strand");
+}
+
+#[test]
+fn next_at_the_end_stays_put() {
+    let mut progress = league_start();
+    while progress.next_leg() {}
+
+    assert_eq!(progress.act(), 10);
+    assert!(!progress.next_leg());
+}
+
+#[test]
+fn next_after_a_correction_is_not_undone_by_the_town_trip_rule() {
+    // In The Submerged Passage, the player corrects forward past the Tidal
+    // Island trip; a later town trip must return to the corrected visit.
+    let mut progress = league_start();
+    walk(&mut progress, &["1_1_town", "1_1_2", "1_1_3", "1_1_4_1"]);
+    walk(&mut progress, &["1_1_town"]);
+    while progress.area_name() != "The Submerged Passage" {
+        progress.next_leg();
+    }
+    assert_eq!(texts(progress.steps()), ["➞ The Flooded Depths"]);
+
+    walk(&mut progress, &["1_1_town", "1_1_4_1"]);
+
+    assert_eq!(texts(progress.steps()), ["➞ The Flooded Depths"]);
+}
+
+#[test]
+fn saved_position_restores_the_same_area_visit() {
+    let mut progress = league_start();
+    walk(&mut progress, &["1_1_town", "1_1_2", "1_1_3", "1_1_4_1", "1_1_2", "1_1_2a"]);
+    let saved = progress.position();
+
+    let mut restored = league_start();
+    assert!(restored.restore(&saved));
+
+    assert_eq!(texts(restored.steps()), ["Find and kill Hailrake, take Medicine Chest", "Logout ➞ Lioneye's Watch"]);
+}
+
+#[test]
+fn saved_position_survives_a_route_variant_change() {
+    let mut progress = league_start();
+    walk(&mut progress, &["1_1_town", "1_1_2", "1_1_3", "1_1_4_1", "1_1_2", "1_1_2a", "1_1_town", "1_1_4_1", "1_1_4_0"]);
+    let saved = progress.position();
+
+    let mut restored = with(RouteOptions { league_start: false, ..RouteOptions::default() });
+    assert!(restored.restore(&saved));
+
+    assert_eq!(restored.area_name(), "The Flooded Depths");
+    assert_eq!(texts(restored.steps())[0], "Find and kill The Dweller of the Deep");
+}
+
+#[test]
+fn position_for_an_area_no_longer_on_the_route_is_not_restored() {
+    let mut other = league_start();
+    walk(&mut other, &["1_1_town", "1_1_2", "1_1_3", "1_1_4_1", "1_1_2", "1_1_2a"]);
+    let tidal_island = other.position();
+
+    let mut restored = with(RouteOptions { league_start: false, ..RouteOptions::default() });
+
+    assert!(!restored.restore(&tidal_island));
+    assert_eq!(restored.area_name(), "The Twilight Strand");
+}
