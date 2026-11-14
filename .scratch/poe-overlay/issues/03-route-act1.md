@@ -4,10 +4,10 @@
 
 **Blocked by:** 02 (Companion skeleton)
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] Client.txt is found automatically for a Steam install in any Steam library folder
-- [ ] Entering an Act 1 Area moves the Route panel to that Area's Steps within a second
+- [x] Entering an Act 1 Area moves the Route panel to that Area's Steps within a second
 - [x] Same-named Areas are distinguished by area ID
 - [x] Existing log content at startup does not advance the Route
 - [x] Log parsing is covered by tests using recorded Client.txt lines
@@ -35,3 +35,7 @@ The code is on `main`. What's covered:
 **Known limits:**
 - **Progress isn't saved between sessions (ticket 05):** a Character partway through Act 1 who logs in to town sees the first town visit's Steps until entering the next Area.
 - **Boss arenas:** `{arena}` Steps (The Warden's Quarters, Merveil's Lair) have no area ID in the Route data. If the game logs one, the panel shows "off the Route" there with the last Steps kept.
+
+### In game (user, 2026-11-14)
+
+"Works well": the Route panel shows and follows Act 1 Areas in game.
