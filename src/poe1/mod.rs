@@ -1,5 +1,8 @@
 //! Path of Exile 1 specifics.
 
+pub mod client_log;
+pub mod route;
+
 /// Game executables of the Steam and standalone clients.
 pub const EXECUTABLES: &[&str] = &[
     "PathOfExileSteam.exe",
@@ -16,4 +19,12 @@ const STEAM_WINDOW_CLASS: &str = "steam_app_238960";
 /// Standalone clients (Lutris, Heroic) are recognised by the game's own title.
 pub fn is_game_window(app_id: &str, title: &str) -> bool {
     app_id == STEAM_WINDOW_CLASS || title == "Path of Exile"
+}
+
+/// Steam app ID of Path of Exile 1.
+const STEAM_APP_ID: &str = "238960";
+
+/// The game's Client.txt in whichever Steam library under `steam_roots` has it.
+pub fn client_log_path(steam_roots: &[std::path::PathBuf]) -> Option<std::path::PathBuf> {
+    crate::steam::app_install_dir(steam_roots, STEAM_APP_ID).map(|dir| dir.join("logs/Client.txt"))
 }
