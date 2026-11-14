@@ -26,11 +26,19 @@ pub fn run(game_pid: i32) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let game = match Pid::from_raw(game_pid).map(|pid| pidfd_open(pid, PidfdFlags::empty())) {
-        Some(Ok(fd)) => fd,
-        _ => {
-            eprintln!("poe-overlay: game process {game_pid} is not running");
+    let Some(pid) = Pid::from_raw(game_pid) else {
+        eprintln!("poe-overlay: invalid game PID {game_pid}");
+        return ExitCode::FAILURE;
+    };
+    let game = match pidfd_open(pid, PidfdFlags::empty()) {
+        Ok(fd) => fd,
+        Err(rustix::io::Errno::SRCH) => {
+            eprintln!("poe-overlay: game process {game_pid} already exited");
             return ExitCode::SUCCESS;
+        }
+        Err(err) => {
+            eprintln!("poe-overlay: cannot watch game process {game_pid}: {err}");
+            return ExitCode::FAILURE;
         }
     };
     let game_exited = exit_signal(game);
@@ -73,7 +81,7 @@ fn activate(app: &gtk::Application, game_exited: async_channel::Receiver<()>) {
     let changes = toplevels::watch();
     glib::spawn_future_local(async move {
         while let Ok(visibility) = changes.recv().await {
-            show(&window, &visibility);
+            apply_visibility(&window, &visibility);
         }
         window.set_visible(false);
     });
@@ -141,7 +149,7 @@ fn limit_input_to_panel(surface: &gdk::Surface) {
     surface.set_input_region(Some(&cairo::Region::create_rectangle(&panel)));
 }
 
-fn show(window: &gtk::ApplicationWindow, visibility: &Visibility) {
+fn apply_visibility(window: &gtk::ApplicationWindow, visibility: &Visibility) {
     let Visibility::Shown { output } = visibility else {
         window.set_visible(false);
         return;

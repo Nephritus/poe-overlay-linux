@@ -1,12 +1,11 @@
 //! Path of Exile 1 specifics.
 
-/// Steam app ID of Path of Exile 1.
-pub const STEAM_APP_ID: u32 = 238960;
+/// X11 window class Proton gives the game window: `steam_app_<Steam app ID>`.
+const STEAM_WINDOW_CLASS: &str = "steam_app_238960";
 
 /// Whether a toplevel window is the Path of Exile 1 game window.
 ///
-/// Under Proton the X11 window class is `steam_app_<id>`; other launchers keep
-/// the game's own window title.
+/// Standalone clients (Lutris, Heroic) are recognised by the game's own title.
 pub fn is_game_window(app_id: &str, title: &str) -> bool {
-    app_id == format!("steam_app_{STEAM_APP_ID}") || title == "Path of Exile"
+    app_id == STEAM_WINDOW_CLASS || title == "Path of Exile"
 }

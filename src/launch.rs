@@ -17,8 +17,10 @@ pub fn run(game: &[OsString]) -> ExitCode {
     ExitCode::from(127)
 }
 
-/// Starts `poe-overlay overlay --game-pid <pid>` detached from this process
-/// tree, so it never becomes a child of the game or its runtime container.
+/// Starts `poe-overlay overlay --game-pid <pid>` detached (new session, orphaned
+/// to the nearest subreaper, Steam's reaper under Steam), so it never becomes a
+/// child of the game or its runtime container. Steam still counts it as part of
+/// the game, which is why it must exit with the game.
 fn spawn_overlay(game_pid: u32) -> io::Result<()> {
     let mut cmd = Command::new(std::env::current_exe()?);
     cmd.args(["overlay", "--game-pid", &game_pid.to_string()])
@@ -26,7 +28,8 @@ fn spawn_overlay(game_pid: u32) -> io::Result<()> {
         // not hook the overlay's own rendering.
         .env_remove("LD_PRELOAD")
         .stdin(Stdio::null());
-    // SAFETY: only async-signal-safe calls between fork and exec.
+    // SAFETY: the launcher is still single-threaded here, so forking again in
+    // the child before exec cannot deadlock on locks held by other threads.
     unsafe {
         cmd.pre_exec(|| {
             libc::setsid();

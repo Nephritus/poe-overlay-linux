@@ -4,11 +4,35 @@
 
 **Blocked by:** 01 (Toolkit prototype)
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] Launch option starts the game normally (exit code and arguments passed through) and starts exactly one overlay even if launched twice
-- [ ] Overlay exits when the game process exits
+- [x] Launch option starts the game normally (exit code and arguments passed through) and starts exactly one overlay even if launched twice
+- [x] Overlay exits when the game process exits
 - [ ] Placeholder panel appears only while the PoE window is focused and hides on Alt+Tab
 - [ ] Panel appears on the output the game window is on
 - [ ] Clicking the panel leaves keyboard focus on the game; clicks outside it reach the game
-- [ ] Built with the toolkit chosen in 01
+- [x] Built with the toolkit chosen in 01
+
+## Comments
+
+### Implemented (agent, 2026-11-14)
+
+The code is on `main`. The automated tests cover the three ticked items:
+- **Launcher contract:** exit code, arguments, Steam's environment and `LD_PRELOAD` reach the game unchanged. The overlay runs without `LD_PRELOAD`. Launching twice runs one overlay, and the overlay exits when the game exits.
+- **Game-focus logic:** the panel shows on activate, hides on Alt+Tab, hides on close, follows the game to another output, and isn't fooled by a browser tab about PoE.
+
+**Live smoke on niri 26.04,** using a stand-in window titled "Path of Exile" instead of the game:
+- The `poe-overlay` layer surface was mapped, with keyboard interactivity `none`, only while the stand-in was focused.
+- The overlay process exited when the stand-in did.
+
+**Needs an in-game check (human).** Set the Steam launch option to `<path>/poe-overlay launch -- %command%`, start PoE (borderless windowed), then:
+
+| Check | Pass when | Result |
+|---|---|---|
+| Panel appears | The "PoE Overlay" panel shows at the left while PoE is focused | |
+| Window identity | `niri msg focused-window` on PoE shows app_id `steam_app_238960` (title "Path of Exile" also matches) | |
+| Alt+Tab | Switching away hides the panel; switching back shows it, with no black screen or flicker | |
+| Focus kept | Clicking the panel leaves PoE focused, and game keys still work | |
+| Click-through | Clicking next to the panel reaches the game | |
+| Exit with game | After quitting PoE, `pgrep -af "poe-overlay overlay"` prints nothing and Steam shows the game as stopped | |
+| Game's monitor | Multi-monitor only: the panel shows on PoE's monitor | n/a (single screen) |
