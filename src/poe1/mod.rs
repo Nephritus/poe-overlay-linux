@@ -2,6 +2,7 @@
 
 pub mod client_log;
 pub mod leveling;
+pub mod prices;
 pub mod route;
 
 /// Game executables of the Steam and standalone clients.

@@ -11,6 +11,15 @@ use crate::poe1::route::RouteOptions;
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub route: RouteOptions,
+    pub prices: PricesConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PricesConfig {
+    /// League to price in; unset means the league poe.ninja lists first
+    /// (the current challenge league).
+    pub league: Option<String>,
 }
 
 impl Config {

@@ -25,6 +25,12 @@ enum Commands {
         #[arg(long)]
         game_pid: i32,
     },
+    /// Sends an Action to the running Overlay; bind this to a key in your
+    /// compositor, e.g. `poe-overlay trigger currency-rates`.
+    Trigger {
+        #[arg(value_enum)]
+        action: poe_overlay::running::Action,
+    },
     /// Shows credits and licenses for bundled third-party data.
     Credits,
 }
@@ -33,6 +39,13 @@ fn main() -> ExitCode {
     match Cli::parse().command {
         Commands::Launch { game } => poe_overlay::launch::run(&game),
         Commands::Overlay { game_pid } => poe_overlay::overlay::run(game_pid),
+        Commands::Trigger { action } => match poe_overlay::running::send(action) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("poe-overlay: {err}");
+                ExitCode::FAILURE
+            }
+        },
         Commands::Credits => {
             print!("{}", poe_overlay::poe1::route::CREDITS);
             ExitCode::SUCCESS

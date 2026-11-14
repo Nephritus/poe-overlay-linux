@@ -85,13 +85,15 @@ impl OverlaySurface {
         self.panels.borrow_mut().push(Panel { widget, kind });
     }
 
-    /// Shows or hides a `Toggled` Panel. Ignored while the game isn't
-    /// focused, so a Panel never pops up later out of nowhere.
-    pub fn toggle(&self, widget: &impl IsA<gtk::Widget>) {
+    /// Shows or hides a `Toggled` Panel; returns whether it is shown now.
+    /// Ignored while the game isn't focused, so a Panel never pops up later
+    /// out of nowhere.
+    pub fn toggle(&self, widget: &impl IsA<gtk::Widget>) -> bool {
+        let widget = widget.as_ref();
         if self.window.is_visible() {
-            let widget = widget.as_ref();
             widget.set_visible(!widget.is_visible());
         }
+        widget.is_visible()
     }
 
     /// Follows the game window's focus: shows the Overlay on the game's

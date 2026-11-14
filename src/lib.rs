@@ -1,12 +1,14 @@
 pub mod config;
+mod currency_panel;
 pub mod focus;
-pub mod instance;
+pub mod http;
 pub mod launch;
 pub mod log_follow;
 pub mod overlay;
 mod overlay_surface;
 pub mod poe1;
 mod route_panel;
+pub mod running;
 pub mod steam;
 pub mod toplevels;
 pub mod wine;

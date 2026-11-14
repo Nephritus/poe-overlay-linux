@@ -10,27 +10,33 @@ use rustix::process::{Pid, PidfdFlags, pidfd_open};
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use crate::config::Config;
+use crate::currency_panel::{self, CurrencyPanel};
+use crate::http::Http;
+use crate::poe1::prices::PriceSource;
 use crate::focus::Visibility;
 use crate::poe1::client_log;
 use crate::poe1::leveling::{Leveling, ProgressStore};
 use crate::poe1::route::Route;
 use crate::overlay_surface::{OverlaySurface, PanelKind};
 use crate::route_panel::{self, RoutePanel};
-use crate::{instance, log_follow, poe1, steam, toplevels};
+use crate::running::{Action, RunningOverlay};
+use crate::{log_follow, poe1, steam, toplevels};
 
 const APP_ID: &str = "io.github.nephritus.PoeOverlay";
 
 pub fn run(game_pid: i32) -> ExitCode {
-    let _lock = match instance::acquire() {
-        Ok(Some(lock)) => lock,
+    let running = match RunningOverlay::start() {
+        Ok(Some(running)) => running,
         Ok(None) => {
             eprintln!("poe-overlay: an overlay is already running");
             return ExitCode::SUCCESS;
         }
         Err(err) => {
-            eprintln!("poe-overlay: cannot take the instance lock: {err}");
+            eprintln!("poe-overlay: cannot start: {err}");
             return ExitCode::FAILURE;
         }
     };
@@ -53,11 +59,12 @@ pub fn run(game_pid: i32) -> ExitCode {
 
     let app = gtk::Application::builder()
         .application_id(APP_ID)
-        // Single-instance is the lock's job; D-Bus uniqueness would hand
+        // Single-instance is RunningOverlay's job; D-Bus uniqueness would hand
         // activation to an unrelated running overlay.
         .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
         .build();
-    app.connect_activate(move |app| activate(app, game_exited.clone()));
+    let actions = running.actions();
+    app.connect_activate(move |app| activate(app, game_exited.clone(), actions.clone()));
     // GTK must not parse our CLI arguments.
     app.run_with_args::<&str>(&[]);
     ExitCode::SUCCESS
@@ -74,7 +81,7 @@ fn exit_signal(pidfd: OwnedFd) -> async_channel::Receiver<()> {
     rx
 }
 
-fn activate(app: &gtk::Application, game_exited: async_channel::Receiver<()>) {
+fn activate(app: &gtk::Application, game_exited: async_channel::Receiver<()>, actions: async_channel::Receiver<Action>) {
     let hold = app.hold();
     {
         let app = app.clone();
@@ -85,10 +92,18 @@ fn activate(app: &gtk::Application, game_exited: async_channel::Receiver<()>) {
         });
     }
 
-    let overlay = OverlaySurface::new(app, &[route_panel::CSS]);
+    let overlay = OverlaySurface::new(app, &[route_panel::CSS, currency_panel::CSS]);
     let route_panel = RoutePanel::new();
     overlay.add_panel(route_panel.widget(), ROUTE_PANEL_X, ROUTE_PANEL_Y, PanelKind::Always);
-    follow_route(route_panel);
+    let config = Config::load().unwrap_or_else(|err| {
+        eprintln!("poe-overlay: {err}; using defaults");
+        route_panel.set_note(&format!("Settings file has a mistake, using defaults: {err}"));
+        Config::default()
+    });
+    let currency_panel = CurrencyPanel::new();
+    overlay.add_panel(currency_panel.widget(), CURRENCY_PANEL_X, CURRENCY_PANEL_Y, PanelKind::Toggled);
+    follow_route(route_panel, &config);
+    take_actions(actions, overlay.clone(), currency_panel, config.prices.league);
 
     let changes = toplevels::watch();
     glib::spawn_future_local(async move {
@@ -101,12 +116,7 @@ fn activate(app: &gtk::Application, game_exited: async_channel::Receiver<()>) {
 
 /// Shows the Route and moves it along as Client.txt reports Area changes and
 /// the player presses Previous/Next; progress is saved per Character.
-fn follow_route(panel: RoutePanel) {
-    let config = Config::load().unwrap_or_else(|err| {
-        eprintln!("poe-overlay: {err}; using defaults");
-        panel.set_note(&format!("Settings file has a mistake, using defaults: {err}"));
-        Config::default()
-    });
+fn follow_route(panel: RoutePanel, config: &Config) {
     let route = Route::campaign(&config.route);
     for problem in route.problems() {
         eprintln!("poe-overlay: Route data: {problem}");
@@ -153,6 +163,40 @@ fn show(panel: &RoutePanel, leveling: &Leveling) {
     panel.show(leveling.progress(), leveling.character());
 }
 
+/// Carries out Actions from hotkeys while the game is focused.
+fn take_actions(actions: async_channel::Receiver<Action>, overlay: OverlaySurface, panel: CurrencyPanel, league: Option<String>) {
+    let prices = Arc::new(Mutex::new(PriceSource::new(Http::new(), league)));
+    glib::spawn_future_local(async move {
+        while let Ok(action) = actions.recv().await {
+            match action {
+                Action::CurrencyRates => {
+                    if overlay.toggle(panel.widget()) {
+                        // Not awaited here: a slow fetch mustn't hold up the next Action.
+                        glib::spawn_future_local(show_currency_rates(panel.clone(), prices.clone()));
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// Fetches off the GTK thread (poe.ninja may take seconds) and shows the result.
+async fn show_currency_rates(panel: CurrencyPanel, prices: Arc<Mutex<PriceSource<Http>>>) {
+    panel.show_loading();
+    let (tx, rx) = async_channel::bounded(1);
+    std::thread::spawn(move || {
+        let mut prices = prices.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _ = tx.send_blocking(prices.currency_rates(Instant::now()).cloned());
+    });
+    match rx.recv().await {
+        Ok(Ok(rates)) => panel.show_rates(&rates),
+        Ok(Err(message)) => panel.show_error(&message),
+        Err(_) => panel.show_error("Couldn't load prices."),
+    }
+}
+
 // Panel positions, in logical pixels from the output's top left.
 const ROUTE_PANEL_X: f64 = 40.0;
 const ROUTE_PANEL_Y: f64 = 200.0;
+const CURRENCY_PANEL_X: f64 = 400.0;
+const CURRENCY_PANEL_Y: f64 = 200.0;
