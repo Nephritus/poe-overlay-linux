@@ -38,6 +38,7 @@ While the game is focused, the overlay catches its hotkeys itself and carries ou
 
 - `currency-rates` (Alt+R): show or hide the Currency Rates Panel.
 - `price-check` (Alt+D): price the item under the pointer (see [Price Check](#price-check)).
+- `settings` (no key): open the [Settings](#settings) window.
 
 Choose keys in `~/.config/poe-overlay/config.toml`. Modifiers are Ctrl, Shift, Alt and Super; keys are XKB key names such as `R`, `F5` or `Return`. `""` leaves an Action without a hotkey:
 
@@ -62,12 +63,28 @@ If no Overlay is running, the trigger exits with an error saying so.
 
 ## Currency Rates
 
-The Currency Rates Panel lists the 12 most traded currencies of the league, priced in chaos and divine, from [poe.ninja](https://poe.ninja). Prices are fetched when the Panel opens and reused for 15 minutes. If poe.ninja can't be reached, the Panel says why and tries again a minute later at the earliest. The Panel closes when you switch away from the game. The league is the one poe.ninja lists first, normally the current challenge league; to pick another:
+The Currency Rates Panel lists the 12 most traded currencies of the league, priced in chaos and divine, from [poe.ninja](https://poe.ninja). Prices are fetched when the Panel opens and reused for 15 minutes. If poe.ninja can't be reached, the Panel says why and tries again a minute later at the earliest. The Panel closes when you switch away from the game. The league is the one poe.ninja lists first, normally the current challenge league; pick another in the [Settings](#settings) window.
+
+## Settings
+
+`poe-overlay settings` opens a normal window, whether or not the game runs. It's the one place you type into; the overlay itself never takes keyboard focus. It sets:
+
+- **League**: the league Currency Rates and Price Check price in, from the list poe.ninja prices. "Current challenge league" follows poe.ninja's first league from one league to the next.
+- **Client.txt**: where the game's log is, for installs Steam doesn't know (Lutris, Heroic). Leave it empty to find it through Steam. **Choose…** opens a file picker; a path that can't be read is reported in the window and not saved.
+
+**Save** writes them to `~/.config/poe-overlay/config.toml`, keeping your comments and other settings:
 
 ```toml
 [prices]
 league = "Hardcore Covens"
+
+[game]
+client_txt = "/home/you/Games/path-of-exile/drive_c/Program Files (x86)/Grinding Gear Games/Path of Exile/logs/Client.txt"
 ```
+
+A running overlay picks up a new league or Client.txt within a second, also when you edit the file by hand. With a new Client.txt, the Route takes the Character from that log's latest level-up. Route and hotkey settings still apply the next time the game starts.
+
+The `settings` Action opens the window from the game; it has no key unless you give it one under `[hotkeys]` (e.g. `settings = "Alt+F10"`).
 
 ## Price Check
 
@@ -92,7 +109,7 @@ Put it in `/etc/udev/rules.d/60-poe-overlay-uinput.rules`, then run `sudo udevad
 
 ## Leveling Route
 
-While the game is focused, a Route panel shows the Steps for the Area your Character is in, acts 1 to 10. It moves to the right Steps when the game's `Client.txt` reports a new Area. `Client.txt` is found through Steam's library folders.
+While the game is focused, a Route panel shows the Steps for the Area your Character is in, acts 1 to 10. It moves to the right Steps when the game's `Client.txt` reports a new Area. `Client.txt` is found through Steam's library folders; for other installs (Lutris, Heroic), choose it in the [Settings](#settings) window.
 
 The Route variant is set in `~/.config/poe-overlay/config.toml` (or under `$XDG_CONFIG_HOME`). The defaults are exile-leveling's:
 

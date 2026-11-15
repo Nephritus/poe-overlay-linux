@@ -3,16 +3,18 @@
 use std::os::fd::OwnedFd;
 use std::process::ExitCode;
 
-use gtk::glib;
+use gtk::{gio, glib};
 use gtk::prelude::*;
 use rustix::event::{PollFd, PollFlags, poll};
 use rustix::process::{Pid, PidfdFlags, pidfd_open};
 
 use std::cell::RefCell;
+use std::path::PathBuf;
+use std::process::Command;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use crate::config::Config;
+use crate::config::{self, Config};
 use crate::currency_panel::{self, CurrencyPanel};
 use crate::focus::Visibility;
 use crate::hotkeys::Hotkeys;
@@ -20,12 +22,13 @@ use crate::http::Http;
 use crate::item_copier::ItemCopier;
 use crate::key_grab::KeyGrabber;
 use crate::overlay_surface::{OverlaySurface, PanelKind};
-use crate::poe1::client_log;
+use crate::panel_prices::{Prices, ask};
+use crate::poe1::client_log::{self, LogEvent};
 use crate::poe1::leveling::{Leveling, ProgressStore};
 use crate::poe1::prices::PriceSource;
 use crate::poe1::route::Route;
 use crate::price_panel::{self, PricePanel};
-use crate::route_panel::{self, RoutePanel};
+use crate::route_panel::{self, Notice, RoutePanel};
 use crate::running::{Action, RunningOverlay};
 use crate::{log_follow, poe1, steam, toplevels};
 
@@ -103,11 +106,14 @@ fn activate(
     let overlay = OverlaySurface::new(app, &[route_panel::CSS]);
     let route_panel = RoutePanel::new();
     overlay.add_panel(route_panel.widget(), ROUTE_PANEL_X, ROUTE_PANEL_Y, PanelKind::Always);
+    let settings_notice = route_panel.notice();
+    // Before loading, so no change saved meanwhile is missed.
+    let config_changes = config::watch();
     let config = match Config::load() {
         Ok(config) => config,
         Err(err) => {
             eprintln!("poe-overlay: {err}; using defaults");
-            route_panel.set_note(&format!("Settings file has a mistake, using defaults: {err}"));
+            settings_notice.set(Some(&format!("Settings file has a mistake, using defaults: {err}")));
             Config::default()
         }
     };
@@ -118,9 +124,12 @@ fn activate(
     overlay.add_panel(price_panel.widget(), TOGGLED_PANEL_X, TOGGLED_PANEL_Y, PanelKind::Toggled);
     let held = config.hotkeys.get(Action::PriceCheck).map(|hotkey| hotkey.modifiers().collect()).unwrap_or_default();
     let copier = ItemCopier::spawn(key_code_of_c(), held);
-    follow_route(route_panel.clone(), &config);
+    let prices: Prices = Arc::new(Mutex::new(PriceSource::new(Http::new(), config.prices.league.clone())));
+    let route = follow_route(route_panel.clone(), &config);
+    let settings = Settings { league: config.prices.league, client_txt: config.game.client_txt };
+    follow_settings(config_changes, settings, settings_notice, prices.clone(), currency_panel.clone(), route);
     let grabber = grab_hotkeys(route_panel, config.hotkeys, action_sender);
-    take_actions(actions, overlay.clone(), currency_panel, price_panel, copier, config.prices.league);
+    take_actions(actions, overlay.clone(), currency_panel, price_panel, copier, prices);
 
     let changes = toplevels::watch();
     glib::spawn_future_local(async move {
@@ -135,7 +144,7 @@ fn activate(
 
 /// Shows the Route and moves it along as Client.txt reports Area changes and
 /// the player presses Previous/Next; progress is saved per Character.
-fn follow_route(panel: RoutePanel, config: &Config) {
+fn follow_route(panel: RoutePanel, config: &Config) -> RouteFollower {
     let route = Route::campaign(&config.route);
     for problem in route.problems() {
         eprintln!("poe-overlay: Route data: {problem}");
@@ -145,7 +154,7 @@ fn follow_route(panel: RoutePanel, config: &Config) {
         eprintln!("poe-overlay: {warning}");
         panel.set_note(&warning);
     }
-    let log = poe1::client_log_path(&steam::default_roots());
+    let log = poe1::client_log_path(config.game.client_txt.as_deref(), &steam::default_roots());
     let assumed = log.as_deref().and_then(client_log::last_character);
     let leveling = Rc::new(RefCell::new(Leveling::new(route, store, assumed)));
     show(&panel, &leveling.borrow());
@@ -162,17 +171,117 @@ fn follow_route(panel: RoutePanel, config: &Config) {
     panel.on_previous(on_click(Leveling::previous_leg));
     panel.on_next(on_click(Leveling::next_leg));
 
-    let Some(log) = log else {
-        panel.set_note("Client.txt not found in any Steam library; the Route won't follow your Areas.");
-        return;
-    };
-    let lines = log_follow::watch(log);
+    let follower = RouteFollower { notice: panel.notice(), panel, leveling, lines: RefCell::default() };
+    follower.watch(log);
+    follower
+}
+
+/// Feeds one Client.txt at a time into the Leveling session.
+struct RouteFollower {
+    panel: RoutePanel,
+    leveling: Rc<RefCell<Leveling>>,
+    /// Says when there's no Client.txt to follow, or it can't be read.
+    notice: Notice,
+    /// Lines of the log being followed.
+    lines: RefCell<Option<async_channel::Receiver<String>>>,
+}
+
+impl RouteFollower {
+    /// Follows another Client.txt from now on (one chosen in the settings).
+    /// The `character` of its latest level-up is taken as a level-up would be.
+    fn switch_to(&self, log: Option<PathBuf>, character: Option<String>) {
+        if let Some(name) = character {
+            let mut leveling = self.leveling.borrow_mut();
+            leveling.handle(&LogEvent::CharacterLevelled { name });
+            show(&self.panel, &leveling);
+        }
+        self.watch(log);
+    }
+
+    fn watch(&self, log: Option<PathBuf>) {
+        // Ends the old log's reader and its thread.
+        if let Some(old) = self.lines.borrow_mut().take() {
+            old.close();
+        }
+        let Some(log) = log else {
+            self.notice.set(Some("Client.txt not found in any Steam library, so the Route won't follow your Areas; choose it in `poe-overlay settings`."));
+            return;
+        };
+        // Followed anyway: the file may appear once the game writes it.
+        let problem = client_log::check_path(&log).err().map(|problem| format!("{problem} The Route follows your Areas once it can read it."));
+        self.notice.set(problem.as_deref());
+        let lines = log_follow::watch(log);
+        *self.lines.borrow_mut() = Some(lines.clone());
+        let (panel, leveling) = (self.panel.clone(), self.leveling.clone());
+        glib::spawn_future_local(async move {
+            while let Ok(line) = lines.recv().await {
+                // Lines still queued from a log no longer followed.
+                if lines.is_closed() {
+                    return;
+                }
+                let Some(event) = client_log::parse_line(&line) else { continue };
+                let mut leveling = leveling.borrow_mut();
+                if leveling.handle(&event) {
+                    show(&panel, &leveling);
+                }
+            }
+        });
+    }
+}
+
+/// The settings that change while the game runs; the rest of config.toml
+/// applies at the next start.
+struct Settings {
+    league: Option<String>,
+    client_txt: Option<PathBuf>,
+}
+
+/// Applies changes to config.toml (from the Settings window or by hand) as
+/// they're saved.
+fn follow_settings(
+    changes: async_channel::Receiver<Result<Config, String>>,
+    mut current: Settings,
+    notice: Notice,
+    prices: Prices,
+    currency: CurrencyPanel,
+    route: RouteFollower,
+) {
     glib::spawn_future_local(async move {
-        while let Ok(line) = lines.recv().await {
-            let Some(event) = client_log::parse_line(&line) else { continue };
-            let mut leveling = leveling.borrow_mut();
-            if leveling.handle(&event) {
-                show(&panel, &leveling);
+        while let Ok(loaded) = changes.recv().await {
+            let config = match loaded {
+                Ok(config) => config,
+                Err(err) => {
+                    eprintln!("poe-overlay: {err}; keeping the settings in use");
+                    notice.set(Some(&format!("Settings file has a mistake, keeping the settings in use: {err}")));
+                    continue;
+                }
+            };
+            notice.set(None);
+            if config.game.client_txt != current.client_txt {
+                current.client_txt = config.game.client_txt;
+                let chosen = current.client_txt.clone();
+                // Reads Steam's library list and, from the end, Client.txt (hundreds of MB).
+                let found = gio::spawn_blocking(move || {
+                    let log = poe1::client_log_path(chosen.as_deref(), &steam::default_roots());
+                    let character = log.as_deref().and_then(client_log::last_character);
+                    (log, character)
+                })
+                .await;
+                if let Ok((log, character)) = found {
+                    route.switch_to(log, character);
+                }
+            }
+            if config.prices.league != current.league {
+                current.league = config.prices.league;
+                let league = current.league.clone();
+                let _ = ask(&prices, move |source| {
+                    source.set_league(league);
+                    Ok(())
+                })
+                .await;
+                if currency.widget().is_visible() {
+                    currency_panel::refresh(currency.clone(), prices.clone()).await;
+                }
             }
         }
     });
@@ -194,16 +303,15 @@ fn show(panel: &RoutePanel, leveling: &Leveling) {
     panel.show(leveling.progress(), leveling.character());
 }
 
-/// Carries out Actions from hotkeys while the game is focused.
+/// Carries out Actions from hotkeys and triggers.
 fn take_actions(
     actions: async_channel::Receiver<Action>,
     overlay: OverlaySurface,
     currency: CurrencyPanel,
     price: PricePanel,
     copier: ItemCopier,
-    league: Option<String>,
+    prices: Prices,
 ) {
-    let prices = Arc::new(Mutex::new(PriceSource::new(Http::new(), league)));
     glib::spawn_future_local(async move {
         while let Ok(action) = actions.recv().await {
             // Not awaited here: a slow copy or fetch mustn't hold up the next Action.
@@ -217,9 +325,20 @@ fn take_actions(
                     let check = price_panel::price_check(copier.clone(), overlay.clone(), price.clone(), prices.clone());
                     glib::spawn_future_local(check);
                 }
+                Action::Settings => open_settings(),
             }
         }
     });
+}
+
+/// Starts `poe-overlay settings`: a window of its own, outside the overlay.
+fn open_settings() {
+    let started = std::env::current_exe().and_then(|program| Command::new(program).arg("settings").spawn());
+    match started {
+        // Reaped on a thread, so the overlay never waits for the window.
+        Ok(mut window) => drop(std::thread::spawn(move || window.wait())),
+        Err(err) => eprintln!("poe-overlay: cannot open the settings window: {err}"),
+    }
 }
 
 /// The evdev code of the key that types `c` in the player's keyboard layout,

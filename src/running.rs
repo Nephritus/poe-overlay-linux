@@ -25,6 +25,8 @@ pub enum Action {
     CurrencyRates,
     /// Copy the item under the pointer and show its poe.ninja price.
     PriceCheck,
+    /// Open the settings window.
+    Settings,
 }
 
 impl Action {
@@ -38,6 +40,7 @@ impl Action {
         match self {
             Action::CurrencyRates => "Currency Rates",
             Action::PriceCheck => "Price Check",
+            Action::Settings => "Settings",
         }
     }
 }

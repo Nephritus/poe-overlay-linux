@@ -1,7 +1,7 @@
 //! Client.txt lines; all but the chat line were recorded from a real PoE 1
 //! session (2026-11-14).
 
-use poe_overlay::poe1::client_log::{LogEvent, last_character, parse_line};
+use poe_overlay::poe1::client_log::{LogEvent, check_path, last_character, parse_line};
 
 fn entered(area_id: &str) -> Option<LogEvent> {
     Some(LogEvent::AreaEntered { area_id: area_id.into() })
@@ -120,4 +120,38 @@ fn level_up_line_split_across_read_chunks_is_still_found() {
     std::fs::write(&log, format!("{filler_line}{level_up}{tail}")).unwrap();
 
     assert_eq!(last_character(&log).as_deref(), Some("ExampleExile"));
+}
+
+#[test]
+fn chosen_client_txt_that_exists_is_accepted() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("Client.txt");
+    std::fs::write(&log, "").unwrap();
+
+    assert_eq!(check_path(&log), Ok(()));
+}
+
+#[test]
+fn chosen_client_txt_problems_are_named() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let unreadable = dir.path().join("locked.txt");
+    std::fs::write(&unreadable, "").unwrap();
+    std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    let mut cases = vec![(dir.path().join("missing/Client.txt"), "No file at"), (dir.path().to_owned(), "is a folder")];
+    // Root reads any file.
+    if !rustix::process::geteuid().is_root() {
+        cases.push((unreadable, "Can't read"));
+    }
+    for (path, expected) in cases {
+        let err = check_path(&path).unwrap_err();
+        assert!(err.contains(expected) && err.contains(&*path.to_string_lossy()), "{path:?}: {err}");
+    }
+}
+
+#[test]
+fn chosen_client_txt_must_be_a_full_path() {
+    let err = check_path(std::path::Path::new("logs/Client.txt")).unwrap_err();
+    assert!(err.contains("full path"), "{err}");
 }

@@ -224,3 +224,16 @@ fn cheap_entries_without_a_divine_value_get_one_from_the_divine_rate() {
     assert!((prices.prices[0].divine - 0.39 * 0.01071).abs() < 1e-9, "{}", prices.prices[0].divine);
     assert_eq!(categories, ["SkillGem", "Currency"]);
 }
+
+#[test]
+fn items_are_priced_in_the_changed_league() {
+    let ninja = FakeNinja::default();
+    let mut source = PriceSource::new(&ninja, None);
+    let chaos = item("Stackable Currency", "Chaos Orb", ItemKind::Currency { stack: 1 });
+    source.item_prices(&chaos, Instant::now()).unwrap();
+
+    source.set_league(Some("Standard".into()));
+
+    assert_eq!(source.item_prices(&chaos, Instant::now()).unwrap().league, "Standard");
+    assert!(ninja.requests.borrow().last().unwrap().contains("league=Standard&"));
+}

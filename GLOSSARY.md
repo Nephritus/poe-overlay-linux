@@ -30,6 +30,10 @@ _Avoid_: Command, trigger (the CLI verb that sends it), event
 A key combination, chosen in `[hotkeys]`, that the overlay grabs in Xwayland while the game is focused and turns into an Action.
 _Avoid_: Shortcut, keybind (the compositor's own entry), macro
 
+**Settings window**:
+The normal window `poe-overlay settings` opens, where the player types and chooses settings; separate from the Overlay, which never takes keyboard focus.
+_Avoid_: Preferences, options dialog, config editor
+
 ## Leveling
 
 **Route**:

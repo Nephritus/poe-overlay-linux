@@ -170,3 +170,63 @@ fn default_league_without_prices_does_not_blame_the_config() {
 
     assert!(err.contains("Covens") && !err.contains("config"), "{err}");
 }
+
+#[test]
+fn changed_league_is_priced_from_then_on() {
+    let ninja = FakeNinja::default();
+    let mut source = PriceSource::new(&ninja, Some("Standard".into()));
+    let now = Instant::now();
+    assert_eq!(source.currency_rates(now).unwrap().league, "Standard");
+
+    source.set_league(Some("Hardcore".into()));
+
+    assert_eq!(source.currency_rates(now).unwrap().league, "Hardcore");
+    assert!(ninja.currency_requests().last().unwrap().contains("league=Hardcore&"), "{:?}", ninja.currency_requests());
+}
+
+#[test]
+fn changing_back_to_the_default_prices_in_poe_ninjas_first_league() {
+    let ninja = FakeNinja::default();
+    let mut source = PriceSource::new(&ninja, Some("Standard".into()));
+    let now = Instant::now();
+    source.currency_rates(now).unwrap();
+
+    source.set_league(None);
+
+    assert_eq!(source.currency_rates(now).unwrap().league, "Covens");
+}
+
+#[test]
+fn leagues_are_listed_in_poe_ninjas_order() {
+    let ninja = FakeNinja::default();
+    let mut source = PriceSource::new(&ninja, None);
+
+    let leagues = source.leagues(Instant::now()).unwrap();
+
+    assert_eq!(leagues.iter().map(|l| &**l).collect::<Vec<_>>(), ["Covens", "Hardcore Covens", "Standard", "Hardcore"]);
+}
+
+#[test]
+fn league_list_failure_is_a_readable_error() {
+    let ninja = FakeNinja { offline: true, ..FakeNinja::default() };
+
+    let err = PriceSource::new(&ninja, None).leagues(Instant::now()).unwrap_err();
+
+    assert!(err.contains("poe.ninja") && err.contains("connection refused"), "{err}");
+}
+
+#[test]
+fn league_with_almost_no_currency_trades_is_said_so() {
+    // Recorded 2026-11-16: Hardcore (permanent) had two lines and no divine rate.
+    struct Hardcore;
+    impl Fetch for Hardcore {
+        fn get(&self, _url: &str) -> Result<String, String> {
+            Ok(include_str!("data/ninja-exchange-currency-hardcore.json").into())
+        }
+    }
+    let mut source = PriceSource::new(Hardcore, Some("Hardcore".into()));
+
+    let err = source.currency_rates(Instant::now()).unwrap_err();
+
+    assert!(err.contains("Hardcore") && err.contains("too few trades") && !err.contains("unexpected"), "{err}");
+}

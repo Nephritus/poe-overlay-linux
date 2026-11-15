@@ -25,7 +25,7 @@ pub struct RoutePanel {
     next: gtk::Button,
     off_route: gtk::Label,
     steps: gtk::Box,
-    note: gtk::Label,
+    notes: gtk::Box,
 }
 
 impl RoutePanel {
@@ -46,14 +46,13 @@ impl RoutePanel {
         let character = label("", "route-character");
         let off_route = label("", "route-off");
         let steps = gtk::Box::new(gtk::Orientation::Vertical, 2);
-        let note = label("", "route-note");
-        note.set_visible(false);
+        let notes = gtk::Box::new(gtk::Orientation::Vertical, 2);
         root.append(&header);
         root.append(&character);
         root.append(&off_route);
         root.append(&steps);
-        root.append(&note);
-        Self { root, area, character, previous, next, off_route, steps, note }
+        root.append(&notes);
+        Self { root, area, character, previous, next, off_route, steps, notes }
     }
 
     pub fn widget(&self) -> &gtk::Box {
@@ -91,15 +90,29 @@ impl RoutePanel {
         }
     }
 
-    /// Adds a problem the player should know about (e.g. the Route can't
-    /// follow the game); notes stack.
+    /// Adds a problem the player should know about for the rest of the
+    /// session (e.g. the Route can't follow the game); notices stack.
     pub fn set_note(&self, text: &str) {
-        let label = match self.note.label().as_str() {
-            "" => text.to_owned(),
-            existing => format!("{existing}\n{text}"),
-        };
-        self.note.set_label(&label);
-        self.note.set_visible(true);
+        self.notice().set(Some(text));
+    }
+
+    /// A notice below the others that can change or go away later.
+    pub fn notice(&self) -> Notice {
+        let label = label("", "route-note");
+        label.set_visible(false);
+        self.notes.append(&label);
+        Notice(label)
+    }
+}
+
+/// One problem shown on the Route Panel; hidden while it has no text.
+#[derive(Clone)]
+pub struct Notice(gtk::Label);
+
+impl Notice {
+    pub fn set(&self, text: Option<&str>) {
+        self.0.set_label(text.unwrap_or_default());
+        self.0.set_visible(text.is_some());
     }
 }
 

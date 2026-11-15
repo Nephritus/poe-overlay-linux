@@ -32,6 +32,8 @@ enum Commands {
         #[arg(value_enum)]
         action: poe_overlay::running::Action,
     },
+    /// Opens the settings window: league, and where Client.txt is.
+    Settings,
     /// Shows credits and licenses for bundled third-party data.
     Credits,
 }
@@ -47,6 +49,7 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Commands::Settings => poe_overlay::settings_window::run(),
         Commands::Credits => {
             print!("{}", poe_overlay::poe1::route::CREDITS);
             ExitCode::SUCCESS

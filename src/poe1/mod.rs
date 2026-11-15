@@ -26,7 +26,11 @@ pub fn is_game_window(app_id: &str, title: &str) -> bool {
 /// Steam app ID of Path of Exile 1.
 const STEAM_APP_ID: &str = "238960";
 
-/// The game's Client.txt in whichever Steam library under `steam_roots` has it.
-pub fn client_log_path(steam_roots: &[std::path::PathBuf]) -> Option<std::path::PathBuf> {
+/// The game's Client.txt: the one chosen in the settings, else the one in
+/// whichever Steam library under `steam_roots` has the game.
+pub fn client_log_path(chosen: Option<&std::path::Path>, steam_roots: &[std::path::PathBuf]) -> Option<std::path::PathBuf> {
+    if let Some(chosen) = chosen {
+        return Some(chosen.to_owned());
+    }
     crate::steam::app_install_dir(steam_roots, STEAM_APP_ID).map(|dir| dir.join("logs/Client.txt"))
 }

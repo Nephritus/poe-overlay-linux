@@ -106,17 +106,19 @@ pub struct Hotkeys {
 
 impl Default for Hotkeys {
     fn default() -> Hotkeys {
-        let keys = Action::value_variants().iter().map(|&action| (action, Some(default_key(action)))).collect();
+        let keys = Action::value_variants().iter().map(|&action| (action, default_key(action))).collect();
         Hotkeys { keys }
     }
 }
 
-fn default_key(action: Action) -> Hotkey {
+fn default_key(action: Action) -> Option<Hotkey> {
     let text = match action {
         Action::CurrencyRates => "Alt+R",
         Action::PriceCheck => "Alt+D",
+        // Rarely needed in game: no key unless the player picks one.
+        Action::Settings => return None,
     };
-    text.parse().expect("default hotkeys are valid")
+    Some(text.parse().expect("default hotkeys are valid"))
 }
 
 impl Hotkeys {

@@ -98,7 +98,7 @@ pub struct PriceSource<F> {
     fetch: F,
     /// From config; `None` means the league poe.ninja lists first.
     league: Option<Arc<str>>,
-    default_league: Option<Fetched<Arc<str>>>,
+    leagues: Option<Fetched<Arc<[Arc<str>]>>>,
     exchange: HashMap<Category, Fetched<Arc<Exchange>>>,
     stash: HashMap<Category, Fetched<Arc<[StashLine]>>>,
 }
@@ -163,7 +163,31 @@ impl StashLine {
 
 impl<F: Fetch> PriceSource<F> {
     pub fn new(fetch: F, league: Option<String>) -> Self {
-        Self { fetch, league: league.map(Arc::from), default_league: None, exchange: HashMap::new(), stash: HashMap::new() }
+        Self { fetch, league: league.map(Arc::from), leagues: None, exchange: HashMap::new(), stash: HashMap::new() }
+    }
+
+    /// Prices in `league` from now on; `None`: the one poe.ninja lists first.
+    /// Prices fetched for other leagues stay cached.
+    pub fn set_league(&mut self, league: Option<String>) {
+        self.league = league.map(Arc::from);
+    }
+
+    /// The leagues poe.ninja prices, in its order (the current challenge
+    /// league first).
+    pub fn leagues(&mut self, now: Instant) -> Result<Arc<[Arc<str>]>, String> {
+        if let Some(reused) = self.leagues.as_ref().and_then(|l| l.reusable(now)) {
+            return reused;
+        }
+        #[derive(Deserialize)]
+        struct League {
+            id: String,
+        }
+        let result = self.get(&format!("{NINJA}/leagues")).and_then(|body| {
+            let leagues: Vec<League> = serde_json::from_str(&body).map_err(|err| unexpected("league list", err))?;
+            Ok(leagues.into_iter().map(|league| Arc::from(league.id)).collect())
+        });
+        self.leagues = Some(Fetched { at: now, result: result.clone() });
+        result
     }
 
     /// Currency Rates for the league, reusing earlier results (see
@@ -178,8 +202,8 @@ impl<F: Fetch> PriceSource<F> {
     pub fn cached_currency_rates(&self, now: Instant) -> Option<Result<Arc<CurrencyRates>, String>> {
         let league = match &self.league {
             Some(league) => league.clone(),
-            None => match self.default_league.as_ref()?.reusable(now)? {
-                Ok(league) => league,
+            None => match self.leagues.as_ref()?.reusable(now)? {
+                Ok(leagues) => leagues.first()?.clone(),
                 Err(err) => return Some(Err(err)),
             },
         };
@@ -324,20 +348,7 @@ impl<F: Fetch> PriceSource<F> {
         if let Some(league) = &self.league {
             return Ok(league.clone());
         }
-        if let Some(reused) = self.default_league.as_ref().and_then(|d| d.reusable(now)) {
-            return reused;
-        }
-        #[derive(Deserialize)]
-        struct League {
-            id: String,
-        }
-        let result = self.get(&format!("{NINJA}/leagues")).and_then(|body| {
-            let leagues: Vec<League> = serde_json::from_str(&body).map_err(|err| unexpected("league list", err))?;
-            let first = leagues.into_iter().next().ok_or("poe.ninja lists no leagues")?;
-            Ok(Arc::from(first.id))
-        });
-        self.default_league = Some(Fetched { at: now, result: result.clone() });
-        result
+        self.leagues(now)?.first().cloned().ok_or_else(|| "poe.ninja lists no leagues".to_owned())
     }
 
     fn get(&self, url: &str) -> Result<String, String> {
@@ -465,8 +476,9 @@ fn parse_exchange(body: &str, league: &str, category: &str, configured: bool) ->
     #[serde(rename_all = "camelCase")]
     struct Line {
         id: String,
-        /// Price in the primary currency.
-        primary_value: f64,
+        /// Price in the primary currency; left out for untraded entries.
+        primary_value: Option<f64>,
+        #[serde(default)]
         volume_primary_value: f64,
     }
     #[derive(Deserialize)]
@@ -483,23 +495,23 @@ fn parse_exchange(body: &str, league: &str, category: &str, configured: bool) ->
     if overview.core.primary != "chaos" {
         return Err(unexpected("currency overview", format!("prices in {}", overview.core.primary)));
     }
-    let divine_per_chaos = *overview.core.rates.get("divine").ok_or_else(|| unexpected("currency overview", "no divine rate"))?;
+    // A league with next to no trading (e.g. permanent Hardcore) has no divine rate.
+    let Some(&divine_per_chaos) = overview.core.rates.get("divine") else {
+        return Err(format!("poe.ninja has too few trades in {league} to price {}.", category.to_lowercase()));
+    };
     let names: HashMap<&str, &str> = overview.items.iter().map(|i| (i.id.as_str(), i.name.as_str())).collect();
     let chaos = overview
         .lines
         .iter()
-        .filter_map(|line| Some(((*names.get(line.id.as_str())?).to_owned(), line.primary_value)))
+        .filter_map(|line| Some(((*names.get(line.id.as_str())?).to_owned(), line.primary_value?)))
         .collect();
     let mut lines: Vec<&Line> = overview.lines.iter().filter(|l| l.id != "chaos").collect();
     lines.sort_by(|a, b| b.volume_primary_value.total_cmp(&a.volume_primary_value));
     let rates = lines
         .into_iter()
         .filter_map(|line| {
-            Some(CurrencyRate {
-                name: (*names.get(line.id.as_str())?).to_owned(),
-                chaos: line.primary_value,
-                divine: line.primary_value * divine_per_chaos,
-            })
+            let chaos = line.primary_value?;
+            Some(CurrencyRate { name: (*names.get(line.id.as_str())?).to_owned(), chaos, divine: chaos * divine_per_chaos })
         })
         .take(LISTED)
         .collect();

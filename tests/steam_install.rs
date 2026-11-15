@@ -37,7 +37,7 @@ fn client_log_is_found_in_the_main_steam_library() {
     steam_root(&root, &[(&root, &["730", "238960"])]);
     install_poe(&root, "Path of Exile");
 
-    let found = client_log_path(std::slice::from_ref(&root));
+    let found = client_log_path(None, std::slice::from_ref(&root));
 
     assert_eq!(found, Some(root.join("steamapps/common/Path of Exile/logs/Client.txt")));
 }
@@ -50,7 +50,7 @@ fn client_log_is_found_in_another_steam_library() {
     steam_root(&root, &[(&root, &["730"]), (&games, &["238960"])]);
     install_poe(&games, "PoE");
 
-    let found = client_log_path(&[PathBuf::from("/nonexistent/steam"), root]);
+    let found = client_log_path(None, &[PathBuf::from("/nonexistent/steam"), root]);
 
     assert_eq!(found, Some(games.join("steamapps/common/PoE/logs/Client.txt")));
 }
@@ -61,5 +61,16 @@ fn no_client_log_when_the_game_is_not_installed() {
     let root = home.path().join(".local/share/Steam");
     steam_root(&root, &[(&root, &["730"])]);
 
-    assert_eq!(client_log_path(&[root]), None);
+    assert_eq!(client_log_path(None, &[root]), None);
+}
+
+#[test]
+fn chosen_client_txt_is_used_instead_of_steams() {
+    let home = tempfile::tempdir().unwrap();
+    let root = home.path().join(".local/share/Steam");
+    steam_root(&root, &[(&root, &["238960"])]);
+    install_poe(&root, "Path of Exile");
+    let lutris = home.path().join("Games/path-of-exile/drive_c/Program Files (x86)/Grinding Gear Games/Path of Exile/logs/Client.txt");
+
+    assert_eq!(client_log_path(Some(&lutris), &[root]), Some(lutris));
 }

@@ -17,6 +17,7 @@ pub mod poe1;
 mod price_panel;
 mod route_panel;
 pub mod running;
+pub mod settings_window;
 pub mod steam;
 pub mod toplevels;
 mod uinput;

@@ -64,12 +64,12 @@ impl LogFollower {
 const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// Follows `path` on a background thread; the receiver yields each new line.
-/// The thread ends when the receiver is dropped.
+/// The thread ends when the receiver is dropped or closed.
 pub fn watch(path: PathBuf) -> async_channel::Receiver<String> {
     let (tx, rx) = async_channel::unbounded();
     std::thread::spawn(move || {
         let mut follower = LogFollower::new(&path);
-        loop {
+        while !tx.is_closed() {
             match follower.poll() {
                 Ok(lines) => {
                     for line in lines {

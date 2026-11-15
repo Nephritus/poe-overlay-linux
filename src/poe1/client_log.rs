@@ -18,6 +18,23 @@ pub fn parse_line(line: &str) -> Option<LogEvent> {
     area_entered(message).or_else(|| character_levelled(message))
 }
 
+/// Whether `path` can be the game's Client.txt; the problem, in words, if
+/// not. Only full paths: the overlay doesn't run from the game's folder.
+pub fn check_path(path: &Path) -> Result<(), String> {
+    let shown = path.display();
+    if !path.is_absolute() {
+        return Err(format!("{shown} isn't a full path; choose the file or start the path with /."));
+    }
+    match File::open(path) {
+        Ok(file) if file.metadata().is_ok_and(|meta| meta.is_dir()) => {
+            Err(format!("{shown} is a folder; choose Client.txt in the game's logs folder."))
+        }
+        Ok(_) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Err(format!("No file at {shown}.")),
+        Err(err) => Err(format!("Can't read {shown}: {err}.")),
+    }
+}
+
 /// `Generating level 5 area "1_1_4_1" with seed 4172808522`, logged as the
 /// Area loads, about a second before `You have entered …`.
 fn area_entered(message: &str) -> Option<LogEvent> {
