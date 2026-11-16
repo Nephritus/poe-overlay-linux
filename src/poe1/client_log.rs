@@ -4,17 +4,24 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
+use super::trade_request::{self, TradeRequest};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LogEvent {
     /// The Character is entering an Area, identified by the game's area ID.
     AreaEntered { area_id: String },
     /// A Character reached a new level; the only line naming the Character.
     CharacterLevelled { name: String },
+    /// A whisper in the trade site's template, to or from the player.
+    TradeRequest(TradeRequest),
 }
 
 /// Parses one Client.txt line: `<date> <time> <ticks> <hex> [<LEVEL> Client <pid>] <message>`.
 pub fn parse_line(line: &str) -> Option<LogEvent> {
     let message = message(line)?;
+    if message.starts_with('@') {
+        return trade_request::parse(message).map(LogEvent::TradeRequest);
+    }
     area_entered(message).or_else(|| character_levelled(message))
 }
 

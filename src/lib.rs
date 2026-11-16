@@ -21,6 +21,7 @@ pub mod settings_window;
 pub mod steam;
 pub mod toplevels;
 mod trade_http;
+mod trade_panel;
 mod uinput;
 pub mod wine;
 mod xdg;

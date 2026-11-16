@@ -158,6 +158,7 @@ impl Leveling {
                 changed
             }
             LogEvent::CharacterLevelled { name, .. } => self.identify(name),
+            LogEvent::TradeRequest(_) => false,
         }
     }
 

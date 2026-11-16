@@ -6,6 +6,7 @@ pub mod item_copy;
 pub mod leveling;
 pub mod prices;
 pub mod trade;
+pub mod trade_request;
 pub mod trade_search;
 pub mod route;
 

@@ -118,6 +118,10 @@ KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinpu
 
 Put it in `/etc/udev/rules.d/60-poe-overlay-uinput.rules`, then run `sudo udevadm control --reload && sudo udevadm trigger`.
 
+## Trade Requests
+
+Trade-site whispers in `Client.txt` appear as cards at the top centre of the screen: who, the item, the price, the stash tab and position, and anything the buyer added. Buyers' whispers are gold, your own whispers to sellers blue. Bulk currency requests ("1 Divine Orb for my 100 Chaos Orb") show without a stash spot. Cards stack newest on top, five at most; each stays until you close it with ✕. Other whispers make no card. Only English whisper templates are recognised: a buyer whose game runs in another language sends a translated whisper, which shows no card.
+
 ## Leveling Route
 
 While the game is focused, a Route panel shows the Steps for the Area your Character is in, acts 1 to 10. It moves to the right Steps when the game's `Client.txt` reports a new Area. `Client.txt` is found through Steam's library folders; for other installs (Lutris, Heroic), choose it in the [Settings](#settings) window.

@@ -32,6 +32,7 @@ use crate::price_panel::{self, PricePanel};
 use crate::route_panel::{self, Notice, RoutePanel};
 use crate::running::{Action, RunningOverlay};
 use crate::trade_http::TradeSite;
+use crate::trade_panel::{self, TradePanel};
 use crate::{log_follow, poe1, steam, toplevels};
 
 const APP_ID: &str = "io.github.nephritus.PoeOverlay";
@@ -105,7 +106,7 @@ fn activate(
         });
     }
 
-    let overlay = OverlaySurface::new(app, &[route_panel::CSS]);
+    let overlay = OverlaySurface::new(app, &[route_panel::CSS, trade_panel::CSS]);
     let route_panel = RoutePanel::new();
     overlay.add_panel(route_panel.widget(), ROUTE_PANEL_X, ROUTE_PANEL_Y, PanelKind::Always);
     let settings_notice = route_panel.notice();
@@ -119,6 +120,8 @@ fn activate(
             Config::default()
         }
     };
+    // Under the Toggled Panels, which the player opens on purpose.
+    let trade_panel = TradePanel::new(&overlay);
     // The Toggled Panels take turns in one spot next to the Route Panel.
     let currency_panel = CurrencyPanel::new();
     overlay.add_panel(currency_panel.widget(), TOGGLED_PANEL_X, TOGGLED_PANEL_Y, PanelKind::Toggled);
@@ -128,7 +131,7 @@ fn activate(
     let held = config.hotkeys.get(Action::PriceCheck).map(|hotkey| hotkey.modifiers().collect()).unwrap_or_default();
     let copier = ItemCopier::spawn(key_code_of_c(), held);
     let prices: Prices = Arc::new(Mutex::new(PriceSource::new(Http::new(), config.prices.league.clone())));
-    let route = follow_route(route_panel.clone(), &config);
+    let route = follow_route(route_panel.clone(), trade_panel, &config);
     let settings = Settings { league: config.prices.league, client_txt: config.game.client_txt };
     follow_settings(config_changes, settings, settings_notice, prices.clone(), currency_panel.clone(), route);
     let grabber = grab_hotkeys(route_panel, config.hotkeys, action_sender);
@@ -147,7 +150,7 @@ fn activate(
 
 /// Shows the Route and moves it along as Client.txt reports Area changes and
 /// the player presses Previous/Next; progress is saved per Character.
-fn follow_route(panel: RoutePanel, config: &Config) -> RouteFollower {
+fn follow_route(panel: RoutePanel, trades: TradePanel, config: &Config) -> RouteFollower {
     let route = Route::campaign(&config.route);
     for problem in route.problems() {
         eprintln!("poe-overlay: Route data: {problem}");
@@ -174,15 +177,17 @@ fn follow_route(panel: RoutePanel, config: &Config) -> RouteFollower {
     panel.on_previous(on_click(Leveling::previous_leg));
     panel.on_next(on_click(Leveling::next_leg));
 
-    let follower = RouteFollower { notice: panel.notice(), panel, leveling, lines: RefCell::default() };
+    let follower = RouteFollower { notice: panel.notice(), panel, leveling, trades, lines: RefCell::default() };
     follower.watch(log);
     follower
 }
 
-/// Feeds one Client.txt at a time into the Leveling session.
+/// Feeds one Client.txt at a time into the Leveling session and the Trade
+/// Requests Panel.
 struct RouteFollower {
     panel: RoutePanel,
     leveling: Rc<RefCell<Leveling>>,
+    trades: TradePanel,
     /// Says when there's no Client.txt to follow, or it can't be read.
     notice: Notice,
     /// Lines of the log being followed.
@@ -215,7 +220,7 @@ impl RouteFollower {
         self.notice.set(problem.as_deref());
         let lines = log_follow::watch(log);
         *self.lines.borrow_mut() = Some(lines.clone());
-        let (panel, leveling) = (self.panel.clone(), self.leveling.clone());
+        let (panel, leveling, trades) = (self.panel.clone(), self.leveling.clone(), self.trades.clone());
         glib::spawn_future_local(async move {
             while let Ok(line) = lines.recv().await {
                 // Lines still queued from a log no longer followed.
@@ -223,6 +228,10 @@ impl RouteFollower {
                     return;
                 }
                 let Some(event) = client_log::parse_line(&line) else { continue };
+                if let LogEvent::TradeRequest(request) = &event {
+                    trades.add(request);
+                    continue;
+                }
                 let mut leveling = leveling.borrow_mut();
                 if leveling.handle(&event) {
                     show(&panel, &leveling);
