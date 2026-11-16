@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use poe_overlay::poe1::item::parse;
 use poe_overlay::poe1::trade::{ListingKind, TradeData, TradeQuery};
+use poe_overlay::poe1::login::Login;
 use poe_overlay::poe1::trade_search::{TradeError, TradeHttp, TradeResponse, TradeSource, age};
 
 const SEARCH: &str = include_str!("data/trade-search-mitts.json");
@@ -46,7 +47,7 @@ impl FakeTrade {
 }
 
 impl TradeHttp for &FakeTrade {
-    fn send(&self, url: &str, body: Option<&str>) -> Result<TradeResponse, String> {
+    fn send(&self, url: &str, body: Option<&str>, _login: Option<&Login>) -> Result<TradeResponse, String> {
         self.requests.borrow_mut().push((url.to_owned(), body.map(str::to_owned)));
         Ok(if url.contains("/api/trade/search/") { self.search.clone() } else { self.fetch.borrow().clone() })
     }

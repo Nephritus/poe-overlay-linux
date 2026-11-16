@@ -17,6 +17,7 @@ pub struct Config {
     pub prices: PricesConfig,
     pub hotkeys: Hotkeys,
     pub game: GameConfig,
+    pub trade: TradeConfig,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -33,6 +34,14 @@ pub struct GameConfig {
     /// The game's Client.txt, for installs Steam doesn't know (Lutris,
     /// Heroic); unset means found through Steam.
     pub client_txt: Option<PathBuf>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct TradeConfig {
+    /// Trade site searches carry the login read from the player's browser
+    /// (Log in in the Settings window).
+    pub login: bool,
 }
 
 impl Config {
@@ -110,6 +119,10 @@ impl ConfigFile {
         self.get("game", "client_txt").map(Path::new)
     }
 
+    pub fn login(&self) -> bool {
+        self.doc.get("trade").and_then(|trade| trade.get("login")?.as_bool()).unwrap_or(false)
+    }
+
     /// `None` goes back to the league poe.ninja lists first.
     pub fn set_league(&mut self, league: Option<&str>) {
         self.set("prices", "league", league);
@@ -120,12 +133,17 @@ impl ConfigFile {
         self.set("game", "client_txt", path.map(|path| path.to_string_lossy()).as_deref());
     }
 
+    /// Off is the default, so it removes the key.
+    pub fn set_login(&mut self, on: bool) {
+        self.set("trade", "login", on.then_some(true));
+    }
+
     fn get(&self, section: &str, key: &str) -> Option<&str> {
         self.doc.get(section)?.get(key)?.as_str()
     }
 
     /// Sets `section.key`, or removes it (and the section, once empty).
-    fn set(&mut self, section: &str, key: &str, value: Option<&str>) {
+    fn set(&mut self, section: &str, key: &str, value: Option<impl Into<toml_edit::Value>>) {
         match value {
             Some(value) => {
                 let item = self.doc.entry(section).or_insert_with(toml_edit::table);

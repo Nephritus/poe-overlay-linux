@@ -71,6 +71,7 @@ The Currency Rates Panel lists the 12 most traded currencies of the league, pric
 
 - **League**: the league Currency Rates and Price Check price in, from the list poe.ninja prices. "Current challenge league" follows poe.ninja's first league from one league to the next.
 - **Client.txt**: where the game's log is, for installs Steam doesn't know (Lutris, Heroic). Leave it empty to find it through Steam. **Choose…** opens a file picker; a path that can't be read is reported in the window and not saved.
+- **Trade site**: **Log in** and **Log out**, below; these take effect at once, without Save.
 
 **Save** writes them to `~/.config/poe-overlay/config.toml`, keeping your comments and other settings:
 
@@ -117,6 +118,24 @@ KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinpu
 ```
 
 Put it in `/etc/udev/rules.d/60-poe-overlay-uinput.rules`, then run `sudo udevadm control --reload && sudo udevadm trigger`.
+
+### Logging in to the trade site
+
+Searches work without logging in. Logged in, the site counts them against your account as well as your address. **Log in** in the Settings window looks for a login your browser already holds; if there is none, it opens your default browser on the pathofexile.com login page, and the window says "Logged in with Firefox" (or another browser) once you've logged in there. There is nothing to copy.
+
+The overlay reads the login from the browser's cookie file at the first search, again when one of its cookies expires, and at most once a minute while there's no login or no trade token yet. It copies the file (and its write-ahead log, so an open browser's latest login counts) into a private folder in `$XDG_RUNTIME_DIR`, reads only the cookies of pathofexile.com and its subdomains, and deletes the copy at once. Of those it keeps, in memory only, the session (`POESESSID`), the trade token (`POETOKEN`) and Cloudflare's clearance (`cf_clearance`); they're never written anywhere or logged. Searches send them with the User-Agent of the browser they came from, since the clearance holds only for that browser. The trade token lasts a day and the site doesn't renew it in its answers, so once it expires the overlay reads the browser again: opening the trade site in the browser gets a new one.
+
+Read from these folders under your home folder, the default browser's first; with logins in several, the default browser's is used, else the most recent:
+
+| Browser | Profiles |
+|---|---|
+| Firefox | `.config/mozilla/firefox` (Firefox 147+), `.mozilla/firefox`, Snap, Flatpak `org.mozilla.firefox` |
+| LibreWolf | `.config/librewolf/librewolf`, `.librewolf`, Flatpak `io.gitlab.librewolf-community` |
+| Zen | `.config/zen`, `.zen`, Flatpak `app.zen_browser.zen` |
+| Floorp | `.floorp`, Flatpak `one.ablaze.floorp` |
+| Waterfox | `.waterfox`, Flatpak `net.waterfox.waterfox` |
+
+**Log out** makes the overlay forget the login and stop reading the browser; the browser stays logged in. The choice is `login = true` under `[trade]` in config.toml.
 
 ## Trade Requests
 

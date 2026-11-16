@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
+use super::login::{BrowserLogin, Login, ReadBrowsers};
 use super::prices::encode;
 use super::trade::{ListingKind, TRADE_SITE, TradeQuery};
 
@@ -24,9 +25,10 @@ const REFUSED_FOR: Duration = Duration::from_secs(300);
 
 /// Sends requests to the trade site.
 pub trait TradeHttp {
-    /// POSTs `body` as JSON, or GETs without one. Any HTTP status is a
+    /// POSTs `body` as JSON, or GETs without one; with `login`, sends its
+    /// cookies and its browser's User-Agent. Any HTTP status is a
     /// response; `Err` is for no answer at all.
-    fn send(&self, url: &str, body: Option<&str>) -> Result<TradeResponse, String>;
+    fn send(&self, url: &str, body: Option<&str>, login: Option<&Login>) -> Result<TradeResponse, String>;
 }
 
 #[derive(Debug, Clone)]
@@ -118,6 +120,8 @@ pub struct TradeSource<H> {
     searched: Option<(String, Instant, Search)>,
     /// The listings fetched for it.
     found: Option<Arc<Listings>>,
+    /// Set while the player is logged in through their browser.
+    login: Option<BrowserLogin>,
 }
 
 /// A search answer: the listings' ids, cheapest first.
@@ -130,7 +134,17 @@ struct Search {
 
 impl<H: TradeHttp> TradeSource<H> {
     pub fn new(http: H) -> Self {
-        Self { http, search_limits: RateLimits::default(), fetch_limits: RateLimits::default(), refused_until: None, searched: None, found: None }
+        Self { http, search_limits: RateLimits::default(), fetch_limits: RateLimits::default(), refused_until: None, searched: None, found: None, login: None }
+    }
+
+    /// Searches from now on carry the login `read` finds in the browsers.
+    pub fn log_in(&mut self, read: ReadBrowsers) {
+        self.login = Some(BrowserLogin::new(read));
+    }
+
+    /// Searches from now on carry no login; the browsers aren't read.
+    pub fn log_out(&mut self) {
+        self.login = None;
     }
 
     /// The cheapest listings like `query` in `league`. The same search
@@ -176,7 +190,8 @@ impl<H: TradeHttp> TradeSource<H> {
         }
         limits.sent(now);
         let asked = Instant::now();
-        let response = self.http.send(url, body).map_err(|err| TradeError::Failed(format!("Couldn't reach the trade site: {err}")))?;
+        let login = self.login.as_mut().and_then(|login| login.current(now));
+        let response = self.http.send(url, body, login).map_err(|err| TradeError::Failed(format!("Couldn't reach the trade site: {err}")))?;
         // Waits the site states count from its answer, which may take seconds.
         let answered = now + asked.elapsed();
         limits.update(|name| response.header(name), answered);

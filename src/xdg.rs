@@ -12,6 +12,12 @@ pub fn state_home() -> Option<PathBuf> {
     base("XDG_STATE_HOME", ".local/state")
 }
 
+/// `$XDG_RUNTIME_DIR` (private to the user, in memory), else the temporary
+/// folder.
+pub fn runtime_dir() -> PathBuf {
+    std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).filter(|dir| dir.is_absolute()).unwrap_or_else(std::env::temp_dir)
+}
+
 fn base(var: &str, under_home: &str) -> Option<PathBuf> {
     match std::env::var_os(var).map(PathBuf::from).filter(|dir| dir.is_absolute()) {
         Some(dir) => Some(dir),

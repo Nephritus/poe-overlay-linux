@@ -129,14 +129,17 @@ fn activate(
     let currency_panel = CurrencyPanel::new();
     overlay.add_panel(currency_panel.widget(), TOGGLED_PANEL_X, TOGGLED_PANEL_Y, PanelKind::Toggled);
     let trades: Trades = Arc::new(Mutex::new(TradeSource::new(TradeSite::new())));
-    let price_panel = PricePanel::new((TOGGLED_PANEL_X, TOGGLED_PANEL_Y), trades, &overlay);
+    if config.trade.login {
+        trades.lock().unwrap().log_in(browser_login());
+    }
+    let price_panel = PricePanel::new((TOGGLED_PANEL_X, TOGGLED_PANEL_Y), trades.clone(), &overlay);
     overlay.add_panel(price_panel.widget(), TOGGLED_PANEL_X, TOGGLED_PANEL_Y, PanelKind::Toggled);
     let held = config.hotkeys.get(Action::PriceCheck).map(|hotkey| hotkey.modifiers().collect()).unwrap_or_default();
     let copier = ItemCopier::spawn(letters, held);
     let prices: Prices = Arc::new(Mutex::new(PriceSource::new(Http::new(), config.prices.league.clone())));
     let log_follower = follow_log(route_panel.clone(), trade_panel, &config);
-    let settings = Settings { league: config.prices.league, client_txt: config.game.client_txt };
-    follow_settings(config_changes, settings, settings_notice, prices.clone(), currency_panel.clone(), log_follower);
+    let settings = Settings { league: config.prices.league, client_txt: config.game.client_txt, login: config.trade.login };
+    follow_settings(config_changes, settings, settings_notice, (prices.clone(), trades), currency_panel.clone(), log_follower);
     let grabber = grab_hotkeys(route_panel, config.hotkeys, action_sender);
     take_actions(actions, overlay.clone(), currency_panel, price_panel, copier, prices);
 
@@ -250,6 +253,13 @@ impl LogFollower {
 struct Settings {
     league: Option<String>,
     client_txt: Option<PathBuf>,
+    login: bool,
+}
+
+/// Reads the login from the player's browsers; why some couldn't be read
+/// shows in the Settings window.
+fn browser_login() -> poe1::login::ReadBrowsers {
+    Box::new(|| poe1::login::from_browsers().0)
 }
 
 /// Applies changes to config.toml (from the Settings window or by hand) as
@@ -258,7 +268,7 @@ fn follow_settings(
     changes: async_channel::Receiver<Result<Config, String>>,
     mut current: Settings,
     notice: Notice,
-    prices: Prices,
+    (prices, trades): (Prices, Trades),
     currency: CurrencyPanel,
     log_follower: LogFollower,
 ) {
@@ -298,6 +308,16 @@ fn follow_settings(
                 if currency.widget().is_visible() {
                     currency_panel::refresh(currency.clone(), prices.clone()).await;
                 }
+            }
+            if config.trade.login != current.login {
+                current.login = config.trade.login;
+                let login = current.login;
+                // Waits for a search under way.
+                let _ = ask(&trades, move |source| {
+                    if login { source.log_in(browser_login()) } else { source.log_out() }
+                    Ok::<_, String>(())
+                })
+                .await;
             }
         }
     });

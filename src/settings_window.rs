@@ -1,14 +1,14 @@
 //! The Settings window: a normal window in a process of its own, where the
 //! player types and chooses settings (the Overlay takes the keyboard only for
 //! a Price Check bound). Saving writes config.toml, which a running overlay
-//! re-reads within a second.
+//! re-reads within a second; so do Log in and Log out, at once.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime};
 
 use gtk::prelude::*;
 use gtk::{gio, glib};
@@ -16,6 +16,7 @@ use gtk::{gio, glib};
 use crate::config::{self, Config, ConfigFile};
 use crate::http::Http;
 use crate::poe1::client_log;
+use crate::poe1::login::{self, Login};
 use crate::poe1::prices::PriceSource;
 use crate::{files, poe1, steam};
 
@@ -45,6 +46,12 @@ struct SettingsWindow {
     client_txt: gtk::Entry,
     path_problem: gtk::Label,
     status: gtk::Label,
+    login_status: gtk::Label,
+    login_button: gtk::Button,
+    logged_in: Rc<Cell<bool>>,
+    /// Counts Log in and Log out clicks, so a search for the login stops
+    /// at the next one.
+    login_clicks: Rc<Cell<u32>>,
 }
 
 impl SettingsWindow {
@@ -70,29 +77,58 @@ impl SettingsWindow {
         path_problem.set_visible(false);
         grid.attach(&path_problem, 1, 4, 2, 1);
 
+        let login_status = hint("");
+        login_status.set_hexpand(true);
+        let login_button = gtk::Button::with_label("Log in");
+        login_button.set_valign(gtk::Align::Start);
+        grid.attach(&label("Trade site"), 0, 5, 1, 1);
+        grid.attach(&login_status, 1, 5, 1, 1);
+        grid.attach(&login_button, 2, 5, 1, 1);
+        grid.attach(
+            &hint("Log in on pathofexile.com in your browser, and searches carry that login: the overlay reads the browser's pathofexile.com cookies, no other site's. Log out makes the overlay forget it; your browser stays logged in."),
+            1,
+            6,
+            2,
+            1,
+        );
+
         let save = gtk::Button::with_label("Save");
         save.add_css_class("suggested-action");
         save.set_halign(gtk::Align::End);
         save.set_valign(gtk::Align::Start);
         let status = hint("");
         status.set_hexpand(true);
-        grid.attach(&status, 0, 5, 2, 1);
-        grid.attach(&save, 2, 5, 1, 1);
+        grid.attach(&status, 0, 7, 2, 1);
+        grid.attach(&save, 2, 7, 1, 1);
         window.set_child(Some(&grid));
 
-        let this = SettingsWindow { window, league, league_names, leagues: Leagues::default(), client_txt, path_problem, status };
+        let this = SettingsWindow {
+            window,
+            league,
+            league_names,
+            leagues: Leagues::default(),
+            client_txt,
+            path_problem,
+            status,
+            login_status,
+            login_button,
+            logged_in: Rc::default(),
+            login_clicks: Rc::default(),
+        };
         let file = config::path().ok_or_else(|| "No HOME folder, so there's nowhere to save settings.".to_owned());
         let current = file.as_deref().map_err(Clone::clone).and_then(read);
         match &current {
             Ok(current) => {
                 this.client_txt.set_text(&current.client_txt().map(|path| path.to_string_lossy()).unwrap_or_default());
                 this.fill_leagues(&[], current.league());
+                this.show_login(current.login(), false);
             }
             Err(err) => {
                 // Saving would replace what the player meant to write.
                 this.fill_leagues(&[], None);
                 this.set_status(err, true);
                 save.set_sensitive(false);
+                this.login_button.set_sensitive(false);
             }
         }
         this.load_leagues(league_status);
@@ -102,6 +138,10 @@ impl SettingsWindow {
         });
         if let Ok(file) = file {
             let this = this.clone();
+            this.login_button.connect_clicked({
+                let (this, file) = (this.clone(), file.clone());
+                move |_| this.toggle_login(&file)
+            });
             save.connect_clicked(move |_| this.save(&file));
         }
         this.window.present();
@@ -184,7 +224,12 @@ impl SettingsWindow {
             return;
         }
         self.path_problem.set_visible(false);
-        match write(file, self.chosen_league().as_deref(), client_txt) {
+        let league = self.chosen_league();
+        let written = change(file, |settings| {
+            settings.set_league(league.as_deref());
+            settings.set_client_txt(client_txt);
+        });
+        match written {
             Ok(()) => self.set_status("Saved. A running overlay uses the new settings within a second.", false),
             Err(err) => self.set_status(&err, true),
         }
@@ -193,6 +238,67 @@ impl SettingsWindow {
     fn set_status(&self, text: &str, error: bool) {
         self.status.set_label(text);
         self.status.set_css_classes(if error { &["error"] } else { &["dim-label"] });
+    }
+
+    /// Logs in or out: written into `file` at once.
+    fn toggle_login(&self, file: &Path) {
+        let on = !self.logged_in.get();
+        match change(file, |settings| settings.set_login(on)) {
+            Ok(()) => self.show_login(on, true),
+            Err(err) => self.set_login_status(&err, true),
+        }
+    }
+
+    /// Shows whether the player is logged in; when they are, looks for the
+    /// login in their browsers every few seconds until found. After a
+    /// click on Log in, opens the login page if no browser holds one.
+    fn show_login(&self, on: bool, clicked: bool) {
+        self.logged_in.set(on);
+        self.login_clicks.set(self.login_clicks.get() + 1);
+        self.login_button.set_label(if on { "Log out" } else { "Log in" });
+        if !on {
+            let text = if clicked { "Logged out. Your browser stays logged in on pathofexile.com." } else { "Not logged in." };
+            self.set_login_status(text, false);
+            return;
+        }
+        self.set_login_status("Looking for the login in your browsers…", false);
+        let (this, click) = (self.clone(), self.login_clicks.get());
+        glib::spawn_future_local(async move {
+            let mut opened = !clicked;
+            loop {
+                let read = gio::spawn_blocking(|| {
+                    let (found, problems) = login::from_browsers();
+                    (Login::choose(found, SystemTime::now()).map(|login| login.browser), problems)
+                })
+                .await;
+                let Ok((found, problems)) = read else { return };
+                if this.login_clicks.get() != click {
+                    return;
+                }
+                if let Some(browser) = found {
+                    this.set_login_status(&format!("Logged in with {browser}."), false);
+                    return;
+                }
+                let mut text = String::from("Log in on pathofexile.com in your browser; this notices it by itself.");
+                if !opened {
+                    opened = true;
+                    if let Err(err) = gio::AppInfo::launch_default_for_uri(login::LOGIN_PAGE, gio::AppLaunchContext::NONE) {
+                        text = format!("Couldn't open your browser ({err}): log in on {} there; this notices it by itself.", login::LOGIN_PAGE);
+                    }
+                }
+                for problem in &problems {
+                    text.push('\n');
+                    text.push_str(problem);
+                }
+                this.set_login_status(&text, !problems.is_empty());
+                glib::timeout_future(Duration::from_secs(3)).await;
+            }
+        });
+    }
+
+    fn set_login_status(&self, text: &str, error: bool) {
+        self.login_status.set_label(text);
+        self.login_status.set_css_classes(if error { &["error"] } else { &["dim-label"] });
     }
 }
 
@@ -205,12 +311,11 @@ fn read(file: &Path) -> Result<ConfigFile, String> {
     ConfigFile::parse(&text).map_err(mistake)
 }
 
-/// Writes the settings into the file as it is now, so changes made since
+/// Changes the settings in the file as it is now, so changes made since
 /// the window opened are kept.
-fn write(file: &Path, league: Option<&str>, client_txt: Option<&Path>) -> Result<(), String> {
+fn change(file: &Path, edit: impl FnOnce(&mut ConfigFile)) -> Result<(), String> {
     let mut settings = read(file)?;
-    settings.set_league(league);
-    settings.set_client_txt(client_txt);
+    edit(&mut settings);
     files::write_atomic(file, &settings.to_string()).map_err(|err| format!("Couldn't save {}: {err}", file.display()))
 }
 

@@ -1,3 +1,4 @@
+pub mod browsers;
 mod chat_sender;
 mod clipboard;
 pub mod config;
