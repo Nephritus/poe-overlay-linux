@@ -1,3 +1,4 @@
+mod chat_sender;
 mod clipboard;
 pub mod config;
 mod currency_panel;

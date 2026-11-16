@@ -159,12 +159,14 @@ impl OverlaySurface {
         self.window.set_keyboard_mode(KeyboardMode::Exclusive);
     }
 
-    /// Gives the keyboard back to the game; also done whenever a Panel
-    /// closes or the game loses focus. If no window takes the keys soon
-    /// after (the player left for an empty workspace while typing), the
-    /// Overlay hides as when the game loses focus.
-    pub fn release_keyboard(&self) {
-        if self.typing.replace(false) {
+    /// Gives the keyboard back to the game, returning whether the Overlay
+    /// held it; also done whenever a Panel closes or the game loses focus.
+    /// If no window takes the keys soon after (the player left for an empty
+    /// workspace while typing), the Overlay hides as when the game loses
+    /// focus.
+    pub fn release_keyboard(&self) -> bool {
+        let held = self.typing.replace(false);
+        if held {
             self.window.set_keyboard_mode(KeyboardMode::None);
             GtkWindowExt::set_focus(&self.window, None::<&gtk::Widget>);
             let surface = self.clone();
@@ -174,6 +176,7 @@ impl OverlaySurface {
                 }
             });
         }
+        held
     }
 
     /// Calls `active` whenever the Overlay's window gains or loses the
@@ -220,12 +223,19 @@ impl OverlaySurface {
             let applied = RefCell::new(None::<Vec<cairo::RectangleInt>>);
             let next = RefCell::new(Vec::new());
             let surface = surface.clone();
+            let redraw = window.downgrade();
             let update = move || {
                 let mut next = next.borrow_mut();
                 surface.shown_panel_rects(&mut next);
                 let mut applied = applied.borrow_mut();
                 if applied.as_deref() != Some(&next[..]) {
                     gdk_surface.set_input_region(Some(&cairo::Region::create_rectangles(&next)));
+                    // The region goes to the compositor with the next commit:
+                    // one more drawn frame, or a Panel shown last catches no
+                    // clicks (that frame finds the region unchanged).
+                    if let Some(window) = redraw.upgrade() {
+                        window.queue_draw();
+                    }
                     match applied.as_mut() {
                         Some(applied) => std::mem::swap(applied, &mut next),
                         None => *applied = Some(next.clone()),

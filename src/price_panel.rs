@@ -337,7 +337,10 @@ impl PricePanel {
     fn search_again(&self) {
         let mut search = self.shown.borrow_mut();
         // A search is out: its answer brings Search back.
-        let Some(shown) = search.as_mut() else { return self.overlay.release_keyboard() };
+        let Some(shown) = search.as_mut() else {
+            self.overlay.release_keyboard();
+            return;
+        };
         let rows = self.rows.borrow();
         let mut typed_wrong = false;
         shown.query.sale = SALES[chosen(&self.sale)].1;

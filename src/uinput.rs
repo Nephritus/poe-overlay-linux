@@ -8,32 +8,36 @@ use std::time::Duration;
 use evdev::uinput::VirtualDevice;
 use evdev::{AttributeSet, EventType, InputEvent, KeyCode};
 
-use crate::poe1::item_copy::{Key, Keyboard, KeyboardError, Modifier};
+use crate::poe1::keyboard::{Key, Keyboard, KeyboardError, Modifier};
 
 /// Between key events, so the game sees each one.
 const KEY_GAP: Duration = Duration::from_millis(5);
 
+/// The evdev codes of the keys that type `c` and `v` in the player's layout
+/// (AZERTY and Dvorak move them).
+#[derive(Debug, Clone, Copy)]
+pub struct LetterKeys {
+    pub c: u16,
+    pub v: u16,
+}
+
 pub struct VirtualKeyboard {
     device: Result<VirtualDevice, KeyboardError>,
-    /// The key that types `c` in the player's layout.
-    c: KeyCode,
+    letters: LetterKeys,
 }
 
 impl VirtualKeyboard {
     /// Creates the device now: the compositor takes a moment to add a new
-    /// keyboard, and the first Price Check shouldn't lose its keys to that.
-    /// `c` is the evdev code of the key that types `c` in the player's
-    /// layout (AZERTY and Dvorak move it).
-    pub fn new(c: u16) -> VirtualKeyboard {
-        let c = KeyCode(c);
-        let device = create(c).map_err(|err| match err.kind() {
+    /// keyboard, and the first press shouldn't lose its keys to that.
+    pub fn new(letters: LetterKeys) -> VirtualKeyboard {
+        let device = create(letters).map_err(|err| match err.kind() {
             io::ErrorKind::PermissionDenied | io::ErrorKind::NotFound => KeyboardError::Denied,
             _ => KeyboardError::Failed(format!("cannot create a virtual keyboard: {err}")),
         });
         if let Err(KeyboardError::Failed(err)) = &device {
             eprintln!("poe-overlay: {err}");
         }
-        VirtualKeyboard { device, c }
+        VirtualKeyboard { device, letters }
     }
 
     fn code(&self, key: Key) -> KeyCode {
@@ -42,7 +46,9 @@ impl VirtualKeyboard {
             Key::Modifier(Modifier::Shift) => KeyCode::KEY_LEFTSHIFT,
             Key::Modifier(Modifier::Alt) => KeyCode::KEY_LEFTALT,
             Key::Modifier(Modifier::Super) => KeyCode::KEY_LEFTMETA,
-            Key::C => self.c,
+            Key::C => KeyCode(self.letters.c),
+            Key::V => KeyCode(self.letters.v),
+            Key::Enter => KeyCode::KEY_ENTER,
         }
     }
 
@@ -57,11 +63,13 @@ impl VirtualKeyboard {
     }
 }
 
-fn create(c: KeyCode) -> io::Result<VirtualDevice> {
+fn create(letters: LetterKeys) -> io::Result<VirtualDevice> {
     let mut keys = AttributeSet::<KeyCode>::new();
-    for key in [KeyCode::KEY_LEFTCTRL, KeyCode::KEY_LEFTSHIFT, KeyCode::KEY_LEFTALT, KeyCode::KEY_LEFTMETA, c] {
+    for key in [KeyCode::KEY_LEFTCTRL, KeyCode::KEY_LEFTSHIFT, KeyCode::KEY_LEFTALT, KeyCode::KEY_LEFTMETA, KeyCode::KEY_ENTER] {
         keys.insert(key);
     }
+    keys.insert(KeyCode(letters.c));
+    keys.insert(KeyCode(letters.v));
     VirtualDevice::builder()?.name("poe-overlay keyboard").with_keys(&keys)?.build()
 }
 

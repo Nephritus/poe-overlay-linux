@@ -5,32 +5,10 @@
 use std::fmt;
 use std::time::Duration;
 
-pub use crate::hotkeys::Modifier;
+use super::keyboard::{Key, Keyboard, KeyboardError, Modifier, UINPUT_RULE};
 
 /// How long the game gets to put the item on the clipboard.
 const COPY_WAIT: Duration = Duration::from_millis(1500);
-
-/// Keys the copy needs, by what they do rather than where they sit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Key {
-    Modifier(Modifier),
-    C,
-}
-
-/// Key presses the game sees as if typed.
-pub trait Keyboard {
-    /// Whether keys can be pressed at all.
-    fn ready(&mut self) -> Result<(), KeyboardError>;
-    fn press(&mut self, key: Key) -> Result<(), KeyboardError>;
-    fn release(&mut self, key: Key) -> Result<(), KeyboardError>;
-}
-
-#[derive(Debug, Clone)]
-pub enum KeyboardError {
-    /// The virtual keyboard device may not be opened.
-    Denied,
-    Failed(String),
-}
 
 /// The compositor's clipboard, used without keyboard focus.
 pub trait Clipboard {
@@ -49,10 +27,6 @@ pub enum CopyError {
     Clipboard(String),
     NothingCopied,
 }
-
-/// The udev rule Steam ships (steam-devices) that lets the logged-in user
-/// create virtual input devices.
-pub const UINPUT_RULE: &str = r#"KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput""#;
 
 impl fmt::Display for CopyError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

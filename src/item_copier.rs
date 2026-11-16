@@ -3,8 +3,9 @@
 
 use crate::clipboard::DataControlClipboard;
 use crate::game_cursor::GameCursor;
-use crate::poe1::item_copy::{CopyError, Modifier, copy_item};
-use crate::uinput::VirtualKeyboard;
+use crate::poe1::item_copy::{CopyError, copy_item};
+use crate::poe1::keyboard::Modifier;
+use crate::uinput::{LetterKeys, VirtualKeyboard};
 
 pub struct Copied {
     /// Where the pointer was at the press; `None` if unknown.
@@ -19,12 +20,12 @@ pub struct ItemCopier {
 
 impl ItemCopier {
     /// Starts the thread, which sets up the virtual keyboard and clipboard
-    /// right away. `c`: see [`VirtualKeyboard::new`]; `held`: the Price
-    /// Check hotkey's modifiers, which the player may still hold.
-    pub fn spawn(c: u16, held: Vec<Modifier>) -> ItemCopier {
+    /// right away. `held`: the Price Check hotkey's modifiers, which the
+    /// player may still hold.
+    pub fn spawn(letters: LetterKeys, held: Vec<Modifier>) -> ItemCopier {
         let (requests, incoming) = async_channel::unbounded::<async_channel::Sender<Copied>>();
         std::thread::spawn(move || {
-            let mut keyboard = VirtualKeyboard::new(c);
+            let mut keyboard = VirtualKeyboard::new(letters);
             let mut clipboard = connect();
             let mut cursor = GameCursor::default();
             while let Ok(reply) = incoming.recv_blocking() {

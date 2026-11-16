@@ -122,6 +122,17 @@ Put it in `/etc/udev/rules.d/60-poe-overlay-uinput.rules`, then run `sudo udevad
 
 Trade-site whispers in `Client.txt` appear as cards at the top centre of the screen: who, the item, the price, the stash tab and position, and anything the buyer added. Buyers' whispers are gold, your own whispers to sellers blue. Bulk currency requests ("1 Divine Orb for my 100 Chaos Orb") show without a stash spot. Cards stack newest on top, five at most; each stays until you close it with ✕. Other whispers make no card. Only English whisper templates are recognised: a buyer whose game runs in another language sends a translated whisper, which shows no card.
 
+A card's buttons each send one chat line to the game, only when clicked:
+
+| Card | Button | Sends |
+|---|---|---|
+| Buyer's | Invite / Trade / Kick | `/invite`, `/tradewith`, `/kick` with the buyer's name |
+| Buyer's | Thank / Sold | `@buyer Thanks, enjoy!` / `@buyer Sorry, it's already sold.` |
+| Yours | Hideout / Trade / Thank | `/hideout`, `/tradewith` with the seller's name, `@seller Thanks, enjoy!` |
+| Yours | Leave | `/leave` |
+
+The line is pasted into chat (Enter, Ctrl+V, Enter on the virtual keyboard), so any keyboard layout works. Your clipboard is saved first, every type it held (text, images), up to 16 MiB, and put back afterwards; the overlay then hands it to whatever pastes it, until you copy something else. If you were typing in a Price Check box, the keys go back to the game first.
+
 ## Leveling Route
 
 While the game is focused, a Route panel shows the Steps for the Area your Character is in, acts 1 to 10. It moves to the right Steps when the game's `Client.txt` reports a new Area. `Client.txt` is found through Steam's library folders; for other installs (Lutris, Heroic), choose it in the [Settings](#settings) window.

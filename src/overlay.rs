@@ -14,6 +14,7 @@ use std::process::Command;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use crate::chat_sender::ChatSender;
 use crate::config::{self, Config};
 use crate::currency_panel::{self, CurrencyPanel};
 use crate::focus::Visibility;
@@ -33,6 +34,7 @@ use crate::route_panel::{self, Notice, RoutePanel};
 use crate::running::{Action, RunningOverlay};
 use crate::trade_http::TradeSite;
 use crate::trade_panel::{self, TradePanel};
+use crate::uinput::LetterKeys;
 use crate::{log_follow, poe1, steam, toplevels};
 
 const APP_ID: &str = "io.github.nephritus.PoeOverlay";
@@ -121,7 +123,8 @@ fn activate(
         }
     };
     // Under the Toggled Panels, which the player opens on purpose.
-    let trade_panel = TradePanel::new(&overlay);
+    let letters = letter_keys();
+    let trade_panel = TradePanel::new(&overlay, ChatSender::spawn(letters));
     // The Toggled Panels take turns in one spot next to the Route Panel.
     let currency_panel = CurrencyPanel::new();
     overlay.add_panel(currency_panel.widget(), TOGGLED_PANEL_X, TOGGLED_PANEL_Y, PanelKind::Toggled);
@@ -129,7 +132,7 @@ fn activate(
     let price_panel = PricePanel::new((TOGGLED_PANEL_X, TOGGLED_PANEL_Y), trades, &overlay);
     overlay.add_panel(price_panel.widget(), TOGGLED_PANEL_X, TOGGLED_PANEL_Y, PanelKind::Toggled);
     let held = config.hotkeys.get(Action::PriceCheck).map(|hotkey| hotkey.modifiers().collect()).unwrap_or_default();
-    let copier = ItemCopier::spawn(key_code_of_c(), held);
+    let copier = ItemCopier::spawn(letters, held);
     let prices: Prices = Arc::new(Mutex::new(PriceSource::new(Http::new(), config.prices.league.clone())));
     let route = follow_route(route_panel.clone(), trade_panel, &config);
     let settings = Settings { league: config.prices.league, client_txt: config.game.client_txt };
@@ -353,14 +356,17 @@ fn open_settings() {
     }
 }
 
-/// The evdev code of the key that types `c` in the player's keyboard layout,
-/// from the compositor's keymap; the QWERTY position if GDK doesn't know.
-fn key_code_of_c() -> u16 {
-    const QWERTY_C: u16 = 46;
-    let keys = gtk::gdk::Display::default().and_then(|display| display.map_keyval(gtk::gdk::Key::c));
-    let first_level = keys.and_then(|keys| keys.into_iter().find(|key| key.group() == 0 && key.level() == 0));
-    // XKB key codes are evdev codes plus 8.
-    first_level.and_then(|key| u16::try_from(key.keycode()).ok()?.checked_sub(8)).unwrap_or(QWERTY_C)
+/// The evdev codes of the keys that type `c` and `v` in the player's
+/// keyboard layout, from the compositor's keymap; the QWERTY positions if GDK
+/// doesn't know.
+fn letter_keys() -> LetterKeys {
+    let code = |letter: gtk::gdk::Key, qwerty: u16| {
+        let keys = gtk::gdk::Display::default().and_then(|display| display.map_keyval(letter));
+        let first_level = keys.and_then(|keys| keys.into_iter().find(|key| key.group() == 0 && key.level() == 0));
+        // XKB key codes are evdev codes plus 8.
+        first_level.and_then(|key| u16::try_from(key.keycode()).ok()?.checked_sub(8)).unwrap_or(qwerty)
+    };
+    LetterKeys { c: code(gtk::gdk::Key::c, 46), v: code(gtk::gdk::Key::v, 47) }
 }
 
 // Panel positions, in logical pixels from the output's top left.

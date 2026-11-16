@@ -1,8 +1,10 @@
 //! Path of Exile 1 specifics.
 
+pub mod chat;
 pub mod client_log;
 pub mod item;
 pub mod item_copy;
+pub mod keyboard;
 pub mod leveling;
 pub mod prices;
 pub mod trade;
