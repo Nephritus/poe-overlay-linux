@@ -6,6 +6,7 @@
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::browsers::{self, Cookie};
+use crate::keyring::SystemKeyring;
 
 /// The site whose cookies are read.
 pub const DOMAIN: &str = "pathofexile.com";
@@ -86,7 +87,7 @@ pub fn from_browsers() -> (Vec<Found>, Vec<String>) {
     let Some(home) = std::env::var_os("HOME") else { return (found, problems) };
     let default = browsers::default_browser();
     for profile in browsers::profiles(home.as_ref(), default.as_deref()) {
-        match profile.cookies(DOMAIN) {
+        match profile.cookies(DOMAIN, &SystemKeyring) {
             Ok(cookies) => found.push(Found { browser: profile.browser.name, default: profile.browser.is(default.as_deref()), user_agent: profile.user_agent, cookies }),
             Err(err) => problems.push(err.to_string()),
         }

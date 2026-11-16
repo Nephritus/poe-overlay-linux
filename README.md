@@ -134,6 +134,14 @@ Read from these folders under your home folder, the default browser's first; wit
 | Zen | `.config/zen`, `.zen`, Flatpak `app.zen_browser.zen` |
 | Floorp | `.floorp`, Flatpak `one.ablaze.floorp` |
 | Waterfox | `.waterfox`, Flatpak `net.waterfox.waterfox` |
+| Chrome | `.config/google-chrome`, Flatpak `com.google.Chrome` |
+| Chromium | `.config/chromium`, Snap, Flatpak `org.chromium.Chromium` |
+| Brave | `.config/BraveSoftware/Brave-Browser`, Flatpak `com.brave.Browser` |
+| Edge | `.config/microsoft-edge`, Flatpak `com.microsoft.Edge` |
+| Vivaldi | `.config/vivaldi`, Flatpak `com.vivaldi.Vivaldi` |
+| Opera | `.config/opera`, Flatpak `com.opera.Opera` |
+
+Chromium-family browsers encrypt their cookies. The overlay decrypts the pathofexile.com ones with the key the browser keeps in your keyring as "Chrome Safe Storage" (Chromium, Brave: their own name; Edge and Opera use Chromium's, Vivaldi Chrome's): from the Secret Service (GNOME Keyring, KDE's, KeePassXC), else from KWallet if it's open, else the fixed key Chromium uses without a keyring. It never asks to unlock a keyring: a locked keyring or a missing key shows in the Settings window as the reason no login was found. Opera's and Vivaldi's User-Agent can't be told from their files, so their logins are sent with the overlay's usual one.
 
 **Log out** makes the overlay forget the login and stop reading the browser; the browser stays logged in. The choice is `login = true` under `[trade]` in config.toml.
 

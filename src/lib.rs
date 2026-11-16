@@ -10,6 +10,7 @@ pub mod hotkeys;
 pub mod http;
 mod item_copier;
 pub mod key_grab;
+mod keyring;
 pub mod launch;
 pub mod log_follow;
 pub mod overlay;
