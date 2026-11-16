@@ -18,7 +18,7 @@ use crate::panel_prices::{PriceTable, Prices, Trades, ask, clear};
 use crate::poe1::item::{self, Item, ItemKind};
 use crate::poe1::item_copy::CopyError;
 use crate::poe1::prices::ItemPrices;
-use crate::poe1::trade::{ListingKind, NotANumber, TradeData, TradeQuery, bound};
+use crate::poe1::trade::{ListingKind, NotANumber, Rarity, TradeData, TradeQuery, bound};
 use crate::poe1::trade_search::{Listings, TradeError, age};
 
 const WIDTH: i32 = 320;
@@ -53,7 +53,11 @@ pub struct PricePanel {
     status: gtk::Label,
     /// The trade site search, for items poe.ninja doesn't price.
     search: gtk::Grid,
-    /// The sale type searched: linked toggle buttons, as in [`SALES`].
+    /// The choices searched, each a row of linked toggle buttons: the item's
+    /// base or any of its class, the rarity (as in [`RARITIES`]), the sale
+    /// type (as in [`SALES`]).
+    item_type: gtk::Box,
+    rarity: gtk::Box,
     sale: gtk::Box,
     /// One row per stat searched: a checkbox with its wording, its minimum
     /// and maximum.
@@ -111,12 +115,9 @@ impl PricePanel {
         let criteria = gtk::Box::new(gtk::Orientation::Vertical, 6);
         criteria.set_size_request(CRITERIA_WIDTH, -1);
         let options = gtk::Grid::builder().column_spacing(8).row_spacing(4).build();
-        let sale = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        sale.add_css_class("linked");
-        let sale_label = gtk::Label::builder().label("Sale").xalign(0.0).build();
-        sale_label.add_css_class("panel-status");
-        options.attach(&sale_label, 0, 0, 1, 1);
-        options.attach(&sale, 1, 0, 1, 1);
+        let item_type = option_row(&options, 0, "Item");
+        let rarity = option_row(&options, 1, "Rarity");
+        let sale = option_row(&options, 2, "Sale");
         criteria.append(&options);
         criteria.append(&filters);
         criteria.append(&search_button);
@@ -145,7 +146,9 @@ impl PricePanel {
             table,
             status,
             search,
-            sale: sale.clone(),
+            item_type,
+            rarity,
+            sale,
             filters,
             rows: Rc::default(),
             search_button: search_button.clone(),
@@ -258,11 +261,15 @@ impl PricePanel {
     /// For items poe.ninja doesn't price: the Panel goes wide, with the
     /// search's stats (each switchable) and the modifiers it leaves out on
     /// the left, its Listings on the right.
-    fn show_search(&self, query: &TradeQuery) {
+    fn show_search(&self, query: &TradeQuery, class: &str) {
         // The last item's search, until this one's first answer.
         self.shown.take();
         self.status.set_visible(false);
         self.search.set_visible(true);
+        let types: Vec<String> = item_types(query, class).collect();
+        fill_choice(&self.item_type, types.iter().map(String::as_str), usize::from(query.of_class && query.base_type.is_some()));
+        let rarity = RARITIES.iter().position(|(_, rarity)| *rarity == query.rarity).unwrap_or(0);
+        fill_choice(&self.rarity, RARITIES.iter().map(|(label, _)| *label), rarity);
         let sale = SALES.iter().position(|(_, kind)| *kind == query.sale).unwrap_or(0);
         fill_choice(&self.sale, SALES.iter().map(|(label, _)| *label), sale);
         clear(&self.filters);
@@ -333,6 +340,9 @@ impl PricePanel {
         let rows = self.rows.borrow();
         let mut typed_wrong = false;
         shown.query.sale = SALES[chosen(&self.sale)].1;
+        shown.query.rarity = RARITIES[chosen(&self.rarity)].1;
+        // The base comes first when there is one.
+        shown.query.of_class = shown.query.base_type.is_none() || chosen(&self.item_type) == 1;
         for (filter, row) in shown.query.filters.iter_mut().zip(rows.iter()) {
             filter.enabled = row.checkbox.is_active();
             for (entry, side) in [(&row.min, &mut filter.min), (&row.max, &mut filter.max)] {
@@ -399,6 +409,27 @@ impl PricePanel {
 fn set_label(label: &gtk::Label, text: &str, error: bool) {
     label.set_label(text);
     label.set_css_classes(&[if error { "panel-error" } else { "panel-status" }]);
+}
+
+/// The rarities the player picks from, as the search takes them.
+const RARITIES: [(&str, Option<Rarity>); 4] = [("Any non-unique", None), ("Rare", Some(Rarity::Rare)), ("Magic", Some(Rarity::Magic)), ("Normal", Some(Rarity::Normal))];
+
+/// The item types the player picks from: the item's base, then any item of
+/// its class, where the search has each.
+fn item_types<'a>(query: &'a TradeQuery, class: &str) -> impl Iterator<Item = String> + 'a {
+    let any = query.class_category.map(|_| format!("Any {class}"));
+    query.base_type.map(str::to_owned).into_iter().chain(any)
+}
+
+/// Labels a choice row in the options grid.
+fn option_row(options: &gtk::Grid, row: i32, label: &str) -> gtk::Box {
+    let name = gtk::Label::builder().label(label).xalign(0.0).build();
+    name.add_css_class("panel-status");
+    let choice = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    choice.add_css_class("linked");
+    options.attach(&name, 0, row, 1, 1);
+    options.attach(&choice, 1, row, 1, 1);
+    choice
 }
 
 /// The sale types the player picks from, as the search takes them.
@@ -498,7 +529,7 @@ pub async fn price_check(copier: ItemCopier, overlay: OverlaySurface, panel: Pri
             Ok(search) => search,
             Err(message) => return panel.show_error(&item.name, &message),
         };
-        panel.show_search(&search.query);
+        panel.show_search(&search.query, &item.class);
         panel.search(check, search).await;
         return;
     }

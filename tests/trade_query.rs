@@ -3,7 +3,7 @@
 //! rounded down; ids are the snapshot's.
 
 use poe_overlay::poe1::item::{Item, parse};
-use poe_overlay::poe1::trade::{ListingKind, TradeData, TradeQuery, bound};
+use poe_overlay::poe1::trade::{ListingKind, Rarity, TradeData, TradeQuery, bound};
 
 fn sample(name: &str) -> String {
     std::fs::read_to_string(format!("{}/tests/data/items/{name}.txt", env!("CARGO_MANIFEST_DIR"))).unwrap()
@@ -313,5 +313,64 @@ fn typed_bounds_are_numbers_or_nothing() {
     assert_eq!(bound("-12"), Ok(Some(-12.0)));
     for junk in ["abc", "6 5", "1e999", "NaN", "inf", "12%"] {
         assert!(bound(junk).is_err(), "{junk}");
+    }
+}
+
+/// The search as JSON, for reading single fields.
+fn json(query: &TradeQuery) -> serde_json::Value {
+    serde_json::from_str(&query.to_json()).unwrap()
+}
+
+/// The Death Nails gloves as another item class and base.
+fn gloves_as(class: &str, base: &str) -> Item {
+    parse(&sample("rare-gloves-death-nails").replace("Item Class: Gloves", &format!("Item Class: {class}")).replace("Assassin's Mitts", base)).unwrap()
+}
+
+#[test]
+fn any_item_of_its_class_is_searched_by_category_instead_of_base() {
+    let mut gloves = query(&item("rare-gloves-death-nails"));
+    assert_eq!(gloves.class_category, Some("armour.gloves"));
+
+    gloves.of_class = true;
+
+    let json = json(&gloves);
+    assert_eq!(json["query"]["filters"]["type_filters"]["filters"]["category"], serde_json::json!({ "option": "armour.gloves" }));
+    assert!(json["query"].get("type").is_none(), "{json}");
+}
+
+#[test]
+fn item_classes_map_to_the_trade_sites_own_categories() {
+    for (class, base, category) in [
+        ("Body Armours", "Vaal Regalia", "armour.chest"),
+        ("Rune Daggers", "Platinum Kris", "weapon.runedagger"),
+        ("Thrusting One Hand Swords", "Jewelled Foil", "weapon.rapier"),
+        ("Staves", "Eclipse Staff", "weapon.basestaff"),
+        ("Utility Flasks", "Quicksilver Flask", "flask"),
+        ("Jewels", "Cobalt Jewel", "jewel.base"),
+        ("Jewels", "Large Cluster Jewel", "jewel.cluster"),
+    ] {
+        assert_eq!(query(&gloves_as(class, base)).class_category, Some(category), "{class} {base}");
+    }
+}
+
+#[test]
+fn an_item_class_the_trade_site_has_no_category_for_is_searched_by_its_base() {
+    let mut odd = query(&gloves_as("Made-up Things", "Assassin's Mitts"));
+    assert_eq!(odd.class_category, None);
+
+    odd.of_class = true;
+
+    assert_eq!(json(&odd)["query"]["type"], "Assassin's Mitts");
+}
+
+#[test]
+fn rarity_choice_narrows_the_search() {
+    let mut gloves = query(&item("rare-gloves-death-nails"));
+    let rarity = |gloves: &TradeQuery| json(gloves)["query"]["filters"]["type_filters"]["filters"]["rarity"]["option"].clone();
+    assert_eq!(rarity(&gloves), "nonunique");
+
+    for (choice, option) in [(Rarity::Rare, "rare"), (Rarity::Magic, "magic"), (Rarity::Normal, "normal")] {
+        gloves.rarity = Some(choice);
+        assert_eq!(rarity(&gloves), option);
     }
 }

@@ -133,6 +133,11 @@ impl Locality {
 #[derive(Debug)]
 pub struct TradeQuery<'d> {
     pub base_type: Option<&'d str>,
+    /// The trade site's category for the item's class; `None` if it has none.
+    pub class_category: Option<&'static str>,
+    /// Search any item of the class instead of the base (when it has a
+    /// category).
+    pub of_class: bool,
     pub filters: Vec<StatFilter<'d>>,
     /// Explicit modifiers the trade data has no stat for, as the item shows them.
     pub excluded: Vec<String>,
@@ -141,6 +146,8 @@ pub struct TradeQuery<'d> {
     pub skipped: Vec<String>,
     /// Only Listings of this kind; `None`: both.
     pub sale: Option<ListingKind>,
+    /// Only this rarity; `None`: any but unique.
+    pub rarity: Option<Rarity>,
 }
 
 /// How a Listing is bought.
@@ -151,6 +158,14 @@ pub enum ListingKind {
     InstantBuyout,
     /// From a seller online now, reached by whisper.
     InPerson,
+}
+
+/// The rarities a search can narrow to (uniques are priced by poe.ninja).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rarity {
+    Rare,
+    Magic,
+    Normal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -302,12 +317,15 @@ impl<'d> TradeQuery<'d> {
         let filter = |(id, text), total: Value| StatFilter { id, text, min: total.minimum(), max: None, enabled: true };
         filters.extend(totals.filter(|(_, total)| total.value > 0.0).map(|(stat, total)| filter(stat, total)));
         filters.extend(stats.into_iter().map(|(stat, total)| filter((stat.id, &stat.text), total)));
-        Some(TradeQuery { base_type: data.base_type(base_line), filters, excluded, skipped, sale: None })
+        let base_type = data.base_type(base_line);
+        let class_category = class_category(&item.class, base_type);
+        Some(TradeQuery { base_type, class_category, of_class: false, filters, excluded, skipped, sale: None, rarity: None })
     }
 
     /// The search as the trade site's API takes it: the sale type chosen
-    /// (instant buyout and in person from sellers online now by default), any
-    /// non-unique rarity, cheapest first; switched-off filters left out.
+    /// (instant buyout and in person from sellers online now by default), the
+    /// item's base or any of its class, the rarity chosen (any non-unique by
+    /// default), cheapest first; switched-off filters left out.
     pub fn to_json(&self) -> String {
         let filters: Vec<serde_json::Value> = self
             .filters
@@ -332,16 +350,72 @@ impl<'d> TradeQuery<'d> {
             Some(ListingKind::InstantBuyout) => "securable",
             Some(ListingKind::InPerson) => "online",
         };
+        let rarity = match self.rarity {
+            None => "nonunique",
+            Some(Rarity::Rare) => "rare",
+            Some(Rarity::Magic) => "magic",
+            Some(Rarity::Normal) => "normal",
+        };
         let mut query = serde_json::json!({
             "status": { "option": status },
             "stats": [{ "type": "and", "filters": filters }],
-            "filters": { "type_filters": { "filters": { "rarity": { "option": "nonunique" } } } },
+            "filters": { "type_filters": { "filters": { "rarity": { "option": rarity } } } },
         });
-        if let Some(base_type) = self.base_type {
-            query["type"] = base_type.into();
+        match (self.of_class, self.class_category, self.base_type) {
+            (true, Some(category), _) => query["filters"]["type_filters"]["filters"]["category"] = serde_json::json!({ "option": category }),
+            (_, _, Some(base_type)) => query["type"] = base_type.into(),
+            _ => {}
         }
         serde_json::json!({ "query": query, "sort": { "price": "asc" } }).to_string()
     }
+}
+
+/// The trade site's category for every item of `class` (as the game names
+/// it), the base telling cluster jewels from the rest; `None` if it has none.
+fn class_category(class: &str, base_type: Option<&str>) -> Option<&'static str> {
+    const CATEGORIES: [(&str, &str); 37] = [
+        ("Claws", "weapon.claw"),
+        ("Daggers", "weapon.basedagger"),
+        ("Rune Daggers", "weapon.runedagger"),
+        ("One Hand Swords", "weapon.basesword"),
+        ("Thrusting One Hand Swords", "weapon.rapier"),
+        ("One Hand Axes", "weapon.oneaxe"),
+        ("One Hand Maces", "weapon.basemace"),
+        ("Sceptres", "weapon.sceptre"),
+        ("Wands", "weapon.wand"),
+        ("Bows", "weapon.bow"),
+        ("Staves", "weapon.basestaff"),
+        ("Warstaves", "weapon.warstaff"),
+        ("Two Hand Swords", "weapon.twosword"),
+        ("Two Hand Axes", "weapon.twoaxe"),
+        ("Two Hand Maces", "weapon.twomace"),
+        ("Fishing Rods", "weapon.rod"),
+        ("Body Armours", "armour.chest"),
+        ("Boots", "armour.boots"),
+        ("Gloves", "armour.gloves"),
+        ("Helmets", "armour.helmet"),
+        ("Shields", "armour.shield"),
+        ("Quivers", "armour.quiver"),
+        ("Amulets", "accessory.amulet"),
+        ("Rings", "accessory.ring"),
+        ("Belts", "accessory.belt"),
+        ("Trinkets", "accessory.trinket"),
+        ("Jewels", "jewel.base"),
+        ("Abyss Jewels", "jewel.abyss"),
+        ("Life Flasks", "flask"),
+        ("Mana Flasks", "flask"),
+        ("Hybrid Flasks", "flask"),
+        ("Utility Flasks", "flask"),
+        ("Tinctures", "tincture"),
+        ("Heist Gear", "heistequipment.heistweapon"),
+        ("Heist Tools", "heistequipment.heisttool"),
+        ("Heist Cloaks", "heistequipment.heistutility"),
+        ("Heist Brooches", "heistequipment.heistreward"),
+    ];
+    if class == "Jewels" && base_type.is_some_and(|base| base.ends_with("Cluster Jewel")) {
+        return Some("jewel.cluster");
+    }
+    CATEGORIES.iter().find(|(name, _)| *name == class).map(|(_, category)| *category)
 }
 
 /// Adds `value` to the stat's total, the same stat on two modifiers summed.
