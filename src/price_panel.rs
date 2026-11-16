@@ -3,21 +3,23 @@
 //! Opened by the `price-check` Action, on the half of the screen away from
 //! the pointer.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::fmt::Write as _;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::Instant;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use gtk::prelude::*;
 
 use crate::item_copier::ItemCopier;
 use crate::overlay_surface::OverlaySurface;
-use crate::panel_prices::{PriceTable, Prices, ask};
+use crate::panel_prices::{PriceTable, Prices, Trades, ask};
 use crate::poe1::item::{self, Item, ItemKind};
 use crate::poe1::item_copy::CopyError;
 use crate::poe1::prices::ItemPrices;
 use crate::poe1::trade::{TradeData, TradeQuery};
+use crate::poe1::trade_search::{Listings, TradeError, age};
 
 const WIDTH: i32 = 320;
 
@@ -33,6 +35,8 @@ pub struct PricePanel {
     status: gtk::Label,
     /// The trade site search, for items poe.ninja doesn't price.
     search: gtk::Box,
+    /// The cheapest listings the trade site has.
+    listings: gtk::Grid,
     /// Modifiers the search leaves out.
     excluded: gtk::Label,
     url: Rc<RefCell<String>>,
@@ -41,8 +45,9 @@ pub struct PricePanel {
     /// The copied text the Panel shows, to tell a second press on the same
     /// item (close) from one on another item (check it).
     text: Rc<RefCell<String>>,
-    /// Counts presses, so a slow copy or answer for an earlier one is dropped.
-    check: Rc<Cell<u64>>,
+    /// Counts presses, so a slow copy or answer for an earlier one is
+    /// dropped; shared with search threads, which skip a stale press.
+    presses: Arc<AtomicU64>,
 }
 
 impl PricePanel {
@@ -68,7 +73,9 @@ impl PricePanel {
         let excluded = gtk::Label::builder().xalign(0.0).wrap(true).max_width_chars(1).build();
         excluded.add_css_class("panel-status");
         let open = gtk::Button::builder().label("Open on trade site").focusable(false).focus_on_click(false).halign(gtk::Align::Start).build();
+        let listings = gtk::Grid::builder().column_spacing(12).build();
         let search = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        search.append(&listings);
         search.append(&open);
         search.append(&excluded);
         root.append(&header);
@@ -76,7 +83,8 @@ impl PricePanel {
         root.append(&status);
         root.append(&search);
         let table = Rc::new(RefCell::new(table));
-        let panel = Self { root, title, table, status, search, excluded, url: Rc::default(), left, text: Rc::default(), check: Rc::default() };
+        let url = Rc::default();
+        let panel = Self { root, title, table, status, search, listings, excluded, url, left, text: Rc::default(), presses: Arc::default() };
         let opener = panel.clone();
         open.connect_clicked(move |_| opener.open_search());
         panel
@@ -125,13 +133,50 @@ impl PricePanel {
     }
 
     /// For items poe.ninja doesn't price: the button to the trade site
-    /// search at `url`, and the modifiers it leaves out.
-    fn show_search(&self, url: &str, excluded: &[String]) {
+    /// search at `url` and the modifiers it leaves out, while the search runs.
+    fn show_search(&self, url: &str, excluded: &[String], skipped: &[String]) {
         self.url.replace(url.to_owned());
         self.search.set_visible(true);
-        self.excluded.set_visible(!excluded.is_empty());
-        self.excluded.set_label(&format!("Not searched (the trade site has no such stat):\n{}", excluded.join("\n")));
-        self.set_status("poe.ninja doesn't price this item: search the trade site for ones like it.", false);
+        self.listings.set_visible(false);
+        let mut left_out = String::new();
+        for (heading, modifiers) in [("the trade site has no such stat", excluded), ("implicit, crafted or enchant", skipped)] {
+            if !modifiers.is_empty() {
+                let _ = write!(left_out, "{}Not searched ({heading}):\n{}", if left_out.is_empty() { "" } else { "\n" }, modifiers.join("\n"));
+            }
+        }
+        self.excluded.set_visible(!left_out.is_empty());
+        self.excluded.set_label(&left_out);
+        self.set_status("Searching the trade site for ones like it…", false);
+    }
+
+    /// Whether `check` is still the latest press.
+    fn is_current(&self, check: u64) -> bool {
+        self.presses.load(Ordering::Relaxed) == check
+    }
+
+    /// The cheapest listings: price, how long ago it was listed, and whether
+    /// the seller is away.
+    fn show_listings(&self, found: &Listings) {
+        while let Some(child) = self.listings.first_child() {
+            self.listings.remove(&child);
+        }
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_secs() as i64);
+        for (row, listing) in (0..).zip(&found.cheapest) {
+            let price = listing.price.as_ref().map_or_else(|| "no price".to_owned(), |(amount, currency)| format!("{amount} {currency}"));
+            let listed = listing.listed.map(|listed| age(now - listed)).unwrap_or_default();
+            let cells = [(price, "panel-name", 0.0), (listed, "panel-status", 1.0), ((if listing.afk { "AFK" } else { "" }).to_owned(), "panel-status", 0.0)];
+            for (column, (text, class, xalign)) in (0..).zip(cells) {
+                let cell = gtk::Label::builder().label(&text).xalign(xalign).build();
+                cell.add_css_class(class);
+                self.listings.attach(&cell, column, row, 1, 1);
+            }
+        }
+        self.listings.set_visible(!found.cheapest.is_empty());
+        let status = match found.total {
+            0 => "No online listings like it: loosen the search on the trade site.".to_owned(),
+            total => format!("Trade site · {total} listed online, cheapest first"),
+        };
+        self.set_status(&status, false);
     }
 
     fn set_status(&self, text: &str, error: bool) {
@@ -153,18 +198,17 @@ impl PricePanel {
 /// One press of the Price Check hotkey. A press while the Panel is open
 /// closes it at once; the copy then decides whether it opens again: not for
 /// the item it showed or when nothing is hovered, yes for another item.
-pub async fn price_check(copier: ItemCopier, overlay: OverlaySurface, panel: PricePanel, prices: Prices) {
+pub async fn price_check(copier: ItemCopier, overlay: OverlaySurface, panel: PricePanel, prices: Prices, trades: Trades) {
     // The copy keys go to whichever window has focus: never to another program.
     if !overlay.game_focused() {
         return;
     }
     let was_open = panel.root.is_visible();
     overlay.hide(panel.widget());
-    let check = panel.check.get() + 1;
-    panel.check.set(check);
+    let check = panel.presses.fetch_add(1, Ordering::Relaxed) + 1;
     let copied = copier.copy().await;
     // A later press took over.
-    if panel.check.get() != check {
+    if !panel.is_current(check) {
         return;
     }
     let text = match copied.text {
@@ -205,19 +249,37 @@ pub async fn price_check(copier: ItemCopier, overlay: OverlaySurface, panel: Pri
         let search = ask(&prices, move |source| {
             let league = source.league(Instant::now())?;
             let query = TradeQuery::new(&lookup, TradeData::bundled()).expect("an item searched on the trade site");
-            Ok((query.site_url(&league), query.excluded))
+            Ok::<_, String>((query.site_url(&league), league, query))
         })
         .await;
-        if panel.check.get() == check {
-            match search {
-                Ok((url, excluded)) => panel.show_search(&url, &excluded),
-                Err(message) => panel.show_error(&item.name, &message),
+        if !panel.is_current(check) {
+            return;
+        }
+        let (url, league, query) = match search {
+            Ok(search) => search,
+            Err(message) => return panel.show_error(&item.name, &message),
+        };
+        panel.show_search(&url, &query.excluded, &query.skipped);
+        // A search still waiting for the lock when the player has moved on
+        // would only spend the rate limit.
+        let presses = panel.presses.clone();
+        let found = ask(&trades, move |source| {
+            if presses.load(Ordering::Relaxed) != check {
+                return Err(TradeError::Failed(String::new()));
+            }
+            source.listings(&query, &league, Instant::now())
+        })
+        .await;
+        if panel.is_current(check) {
+            match found {
+                Ok(found) => panel.show_listings(&found),
+                Err(err) => panel.set_status(&err.to_string(), true),
             }
         }
         return;
     }
     let result = ask(&prices, move |source| source.item_prices(&lookup, Instant::now())).await;
-    if panel.check.get() != check {
+    if !panel.is_current(check) {
         return;
     }
     match result {

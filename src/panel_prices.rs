@@ -1,5 +1,5 @@
-//! What the price Panels share: the price source, asked off the GTK thread,
-//! and tables of prices in chaos and divine.
+//! What the price Panels share: the price and trade sources, asked off the
+//! GTK thread, and tables of prices in chaos and divine.
 
 use std::sync::{Arc, Mutex};
 
@@ -7,23 +7,28 @@ use gtk::prelude::*;
 
 use crate::http::Http;
 use crate::poe1::prices::PriceSource;
+use crate::poe1::trade_search::TradeSource;
+use crate::trade_http::TradeSite;
 
 /// Prices shared between the GTK thread and fetch threads.
 pub type Prices = Arc<Mutex<PriceSource<Http>>>;
 
-/// Runs `question` on the price source on a thread of its own: poe.ninja may
-/// take seconds to answer.
-pub async fn ask<T: Send + 'static>(
-    prices: &Prices,
-    question: impl FnOnce(&mut PriceSource<Http>) -> Result<T, String> + Send + 'static,
-) -> Result<T, String> {
+/// Trade site searches, with their rate limits, shared the same way.
+pub type Trades = Arc<Mutex<TradeSource<TradeSite>>>;
+
+/// Runs `question` on `source` on a thread of its own: poe.ninja and the
+/// trade site may take seconds to answer.
+pub async fn ask<S: Send + 'static, T: Send + 'static, E: From<String> + Send + 'static>(
+    source: &Arc<Mutex<S>>,
+    question: impl FnOnce(&mut S) -> Result<T, E> + Send + 'static,
+) -> Result<T, E> {
     let (tx, rx) = async_channel::bounded(1);
-    let prices = prices.clone();
+    let source = source.clone();
     std::thread::spawn(move || {
-        let mut source = prices.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut source = source.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let _ = tx.send_blocking(question(&mut source));
     });
-    rx.recv().await.unwrap_or_else(|_| Err("Couldn't load prices.".into()))
+    rx.recv().await.unwrap_or_else(|_| Err(E::from("The answer got lost.".to_owned())))
 }
 
 /// Rows of a name and its price in chaos and divine, under a header.

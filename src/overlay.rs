@@ -22,14 +22,16 @@ use crate::http::Http;
 use crate::item_copier::ItemCopier;
 use crate::key_grab::KeyGrabber;
 use crate::overlay_surface::{OverlaySurface, PanelKind};
-use crate::panel_prices::{Prices, ask};
+use crate::panel_prices::{Prices, Trades, ask};
 use crate::poe1::client_log::{self, LogEvent};
 use crate::poe1::leveling::{Leveling, ProgressStore};
 use crate::poe1::prices::PriceSource;
 use crate::poe1::route::Route;
+use crate::poe1::trade_search::TradeSource;
 use crate::price_panel::{self, PricePanel};
 use crate::route_panel::{self, Notice, RoutePanel};
 use crate::running::{Action, RunningOverlay};
+use crate::trade_http::TradeSite;
 use crate::{log_follow, poe1, steam, toplevels};
 
 const APP_ID: &str = "io.github.nephritus.PoeOverlay";
@@ -276,7 +278,7 @@ fn follow_settings(
                 let league = current.league.clone();
                 let _ = ask(&prices, move |source| {
                     source.set_league(league);
-                    Ok(())
+                    Ok::<_, String>(())
                 })
                 .await;
                 if currency.widget().is_visible() {
@@ -312,6 +314,7 @@ fn take_actions(
     copier: ItemCopier,
     prices: Prices,
 ) {
+    let trades: Trades = Arc::new(Mutex::new(TradeSource::new(TradeSite::new())));
     glib::spawn_future_local(async move {
         while let Ok(action) = actions.recv().await {
             // Not awaited here: a slow copy or fetch mustn't hold up the next Action.
@@ -322,7 +325,7 @@ fn take_actions(
                     }
                 }
                 Action::PriceCheck => {
-                    let check = price_panel::price_check(copier.clone(), overlay.clone(), price.clone(), prices.clone());
+                    let check = price_panel::price_check(copier.clone(), overlay.clone(), price.clone(), prices.clone(), trades.clone());
                     glib::spawn_future_local(check);
                 }
                 Action::Settings => open_settings(),

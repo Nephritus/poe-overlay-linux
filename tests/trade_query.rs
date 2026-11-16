@@ -146,6 +146,43 @@ fn modifiers_without_a_trade_stat_are_excluded_by_name() {
 }
 
 #[test]
+fn implicit_crafted_and_enchant_modifiers_outside_totals_are_named_as_skipped() {
+    let belt = query(&item("rare-belt-honour-leash"));
+
+    assert_eq!(belt.skipped, ["Allocates As The Mountain", "Can be Anointed", "17% increased Damage"]);
+    assert!(belt.excluded.is_empty());
+}
+
+#[test]
+fn stat_on_two_lines_is_matched_whole() {
+    let text = sample("rare-gloves-death-nails").replace(
+        "+18 to Intelligence",
+        "Grants Immunity to Bleeding for 4 seconds if used while Bleeding\nGrants Immunity to Corrupted Blood for 4 seconds if used while affected by Corrupted Blood",
+    );
+
+    let gloves = query(&parse(&text).unwrap());
+
+    // explicit.stat_182714578 is the same text with `#` for the seconds.
+    assert!(filters(&gloves).contains(&("explicit.stat_3233646242".to_owned(), None)), "{:?}", filters(&gloves));
+    assert!(gloves.excluded.is_empty(), "{:?}", gloves.excluded);
+}
+
+#[test]
+fn numbers_in_a_stat_wording_tell_stats_apart() {
+    for (seconds, id) in [("4", "explicit.stat_3023957681"), ("10", "explicit.stat_2453026567")] {
+        let line = format!("20% chance to gain Onslaught for {seconds} seconds on Kill");
+        let text = sample("rare-gloves-death-nails").replace("0.23% of Physical Attack Damage Leeched as Mana", &line);
+
+        let gloves = query(&parse(&text).unwrap());
+
+        assert_eq!(filters(&gloves).last(), Some(&(id.to_owned(), Some(18.0))), "{seconds} seconds");
+    }
+    // `Projectiles Pierce # additional Targets` reads the same; the wording one is the stat.
+    let text = sample("rare-gloves-death-nails").replace("0.23% of Physical Attack Damage Leeched as Mana", "Projectiles Pierce 2 additional Targets");
+    assert_eq!(filters(&query(&parse(&text).unwrap())).last(), Some(&("explicit.stat_3640956958".to_owned(), None)));
+}
+
+#[test]
 fn items_without_modifiers_are_searched_by_base() {
     for (sample, base) in [("rare-mace-unidentified", "Ornate Mace"), ("normal-sorcerer-boots", "Sorcerer Boots")] {
         let query = query(&item(sample));

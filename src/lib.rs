@@ -20,6 +20,7 @@ pub mod running;
 pub mod settings_window;
 pub mod steam;
 pub mod toplevels;
+mod trade_http;
 mod uinput;
 pub mod wine;
 mod xdg;

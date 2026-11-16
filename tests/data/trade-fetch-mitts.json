@@ -1,0 +1,216 @@
+{
+  "result": [
+    {
+      "id": "52f17ee4e3a498b475b5668f69f9e9c35fba49d9861e973b0778c57012ae2a86",
+      "listing": {
+        "indexed": "2026-11-15T11:25:14Z",
+        "price": {
+          "type": "~price",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "Takeshi_kovach#7781",
+          "online": {
+            "league": "Covens"
+          }
+        }
+      },
+      "item": {
+        "name": "Behemoth Grasp",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "f8576cc4b54a0bc483e7d25433b5cb33ae5f794727425e76801014211b7fe471",
+      "listing": {
+        "indexed": "2026-11-15T11:40:02Z",
+        "price": {
+          "type": "~b/o",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "anarchyst_de5#4941",
+          "online": {
+            "league": "Covens"
+          }
+        }
+      },
+      "item": {
+        "name": "Morbid Hold",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "14ffcea5ff1a2645654cb1450ef7d54fa6ba78937e0c04fa848419a8f71a4a27",
+      "listing": {
+        "indexed": "2026-11-16T10:04:38Z",
+        "price": {
+          "type": "~price",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "GogoYubari1880#6046",
+          "online": {
+            "league": "Covens"
+          }
+        }
+      },
+      "item": {
+        "name": "Eagle Caress",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "be1b5ce137816f751f4c05b885c852d19275be995f703a65a701537f74cb4286",
+      "listing": {
+        "indexed": "2026-11-14T04:55:31Z",
+        "price": {
+          "type": "~price",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "zhall0#1338",
+          "online": {
+            "league": "Covens",
+            "status": "afk"
+          }
+        }
+      },
+      "item": {
+        "name": "",
+        "typeLine": "Athlete's Assassin's Mitts of the Maelstrom"
+      }
+    },
+    {
+      "id": "b558008917be77031d147bf55a9c63d04f024bb393ef0ac27cbce6bd7a25b5b3",
+      "listing": {
+        "indexed": "2026-11-14T02:19:08Z",
+        "price": {
+          "type": "~b/o",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "QQenko#0410",
+          "online": {
+            "league": "Covens"
+          }
+        }
+      },
+      "item": {
+        "name": "Rage Fingers",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "e2c2ea7cda094c12e3411319707937d78b9af8ec2be71944e3dc6c84f01c86b9",
+      "listing": {
+        "indexed": "2026-11-15T09:52:25Z",
+        "price": {
+          "type": "~b/o",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "xe56#3039",
+          "online": {
+            "league": "Covens"
+          }
+        }
+      },
+      "item": {
+        "name": "Bramble Caress",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "d8beb51a12d2894ed73c87e899acf02f76d77b6a8f17414fa705947ecadb1d8e",
+      "listing": {
+        "indexed": "2026-11-14T07:53:16Z",
+        "price": {
+          "type": "~price",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "dennhucho#5420",
+          "online": {
+            "league": "Covens"
+          }
+        }
+      },
+      "item": {
+        "name": "Carrion Fingers",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "301e99607eba43b7866410e95e0863858b1a73f4226636fafadfdb42ab3be0d5",
+      "listing": {
+        "indexed": "2026-11-15T14:13:18Z",
+        "price": {
+          "type": "~price",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "LummeliN#4288",
+          "online": {
+            "league": "Covens"
+          }
+        }
+      },
+      "item": {
+        "name": "Horror Fist",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "a0df3d2fa3e65e1d29447e2fb77b145d96211f8bbf5759ca7ea169d9a4bef639",
+      "listing": {
+        "indexed": "2026-11-15T10:24:49Z",
+        "price": {
+          "type": "~price",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "seeker1612#6451",
+          "online": {
+            "league": "Covens"
+          }
+        }
+      },
+      "item": {
+        "name": "Empyrean Fingers",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "29cb7b1d8747e07a116b779df98fc645451f18f011bf52bca311765b31bf98c6",
+      "listing": {
+        "indexed": "2026-11-15T21:23:59Z",
+        "price": {
+          "type": "~price",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "Keysor#6556",
+          "online": {
+            "league": "Covens",
+            "status": "afk"
+          }
+        }
+      },
+      "item": {
+        "name": "Honour Hold",
+        "typeLine": "Assassin's Mitts"
+      }
+    }
+  ]
+}

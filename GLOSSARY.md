@@ -69,3 +69,7 @@ _Avoid_: Price (reserved for item listings), conversion
 **Modifier**:
 One line of an item's properties that rolls (`+73 to maximum Life`), by source: implicit, explicit, crafted, fractured or enchant; searched on the trade site as a stat.
 _Avoid_: Affix (only explicit prefixes and suffixes), stat (the trade site's id for a modifier's text)
+
+**Listing**:
+An item put up for sale on the trade site, with its price, when it was listed and its seller; Price Check shows the cheapest of those like the checked item.
+_Avoid_: Offer (reserved for trade), post, ad
