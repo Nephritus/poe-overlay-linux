@@ -67,6 +67,18 @@ fn bulk_request_with_a_full_stop_and_a_note_keeps_the_note() {
 }
 
 #[test]
+fn words_in_a_note_or_league_name_dont_move_the_price() {
+    let bulk = request("@From Orb_Hoarder: Hi, I'd like to buy your 3 Divine Orb for my 400 Chaos Orb in Covens. Can meet in hideout?").unwrap();
+    assert_eq!((bulk.price.as_deref(), bulk.note.as_deref()), (Some("400 Chaos Orb"), Some("Can meet in hideout?")));
+
+    let private = request(r#"@From Tyrael_Buys: Hi, I would like to buy your Gale Fist Assassin's Mitts listed for 1 chaos in Fun in the Sun (PL12345) (stash tab "~price 1 chaos"; position: left 1, top 8)"#).unwrap();
+    assert_eq!((private.item.as_str(), private.price.as_deref()), ("Gale Fist Assassin's Mitts", Some("1 chaos")));
+
+    let bulk_private = request("@From Orb_Hoarder: Hi, I'd like to buy your 3 Divine Orb for my 400 Chaos Orb in Fun in the Sun (PL12345)").unwrap();
+    assert_eq!(bulk_private.price.as_deref(), Some("400 Chaos Orb"));
+}
+
+#[test]
 fn words_after_the_stash_spot_are_the_buyers_note() {
     let found = request(r#"@From Tyrael_Buys: Hi, I would like to buy your Gale Fist Assassin's Mitts listed for 1 chaos in Covens (stash tab "~price 1 chaos"; position: left 1, top 8) would you take 1 alch?"#).unwrap();
 

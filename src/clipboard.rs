@@ -7,6 +7,7 @@
 //! placeholder, a chat line, the player's clipboard put back) it hands over
 //! when asked, as long as its events are dispatched.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
@@ -48,15 +49,21 @@ const SERVE_WAIT: Duration = Duration::from_secs(2);
 /// After the game reads a pasted line, until its chat shows it.
 const PASTE_SETTLE: Duration = Duration::from_millis(150);
 
+/// Offered with a chat line: clipboard managers that honour it (Klipper,
+/// cliphist's sensitive filter) keep it out of their history.
+const SECRET_HINT_TYPE: &str = "x-kde-passwordManagerHint";
+/// How soon clipboard managers read what's new.
+const MANAGERS_READ_WITHIN: Duration = Duration::from_millis(100);
+
 /// Content by type, the same bytes shared between types.
-type Contents = Vec<(String, Rc<[u8]>)>;
+type Contents = Vec<(Cow<'static, str>, Rc<[u8]>)>;
 
 pub struct DataControlClipboard {
     conn: Connection,
     queue: EventQueue<State>,
     state: State,
-    /// `state.pastes` when the chat line was offered.
-    pastes_offered: u64,
+    /// `state.pastes` when the chat line was put on the clipboard.
+    pastes_before: u64,
 }
 
 #[derive(Default)]
@@ -91,7 +98,7 @@ impl DataControlClipboard {
         state.device = Some(manager.get_data_device(seat, &qh, ()));
         // Takes in the current selection.
         queue.roundtrip(&mut state).map_err(|err| err.to_string())?;
-        Ok(DataControlClipboard { conn, queue, state, pastes_offered: 0 })
+        Ok(DataControlClipboard { conn, queue, state, pastes_before: 0 })
     }
 
     /// Handles events until `deadline`, returning early once any came.
@@ -115,9 +122,18 @@ impl DataControlClipboard {
         Ok(())
     }
 
-    /// Whether something this connection offers is the clipboard.
-    pub fn offering(&self) -> bool {
+    /// Whether something this connection put there is the clipboard.
+    pub fn owns_selection(&self) -> bool {
         self.state.source.is_some()
+    }
+
+    /// `slot`'s connection, or a new one: after a failure (a compositor
+    /// restart) the next use connects again.
+    pub fn reuse(slot: &mut Option<DataControlClipboard>) -> Result<DataControlClipboard, String> {
+        match slot.take() {
+            Some(connected) => Ok(connected),
+            None => DataControlClipboard::connect(),
+        }
     }
 
     /// Answers reads of what this connection offers until `wake` is readable
@@ -163,7 +179,7 @@ impl DataControlClipboard {
         let source = (!contents.is_empty()).then(|| manager.create_data_source(&qh, ()));
         if let Some(source) = &source {
             for (mime, _) in &contents {
-                source.offer(mime.clone());
+                source.offer(mime.to_string());
             }
         }
         device.set_selection(source.as_ref());
@@ -181,7 +197,7 @@ impl DataControlClipboard {
 impl Clipboard for DataControlClipboard {
     fn put_placeholder(&mut self) -> Result<(), String> {
         let text: Rc<[u8]> = Rc::from(PLACEHOLDER);
-        self.set_selection(TEXT_TYPES.into_iter().chain([PLACEHOLDER_TYPE]).map(|mime| (mime.to_owned(), text.clone())).collect())
+        self.set_selection(TEXT_TYPES.into_iter().chain([PLACEHOLDER_TYPE]).map(|mime| (Cow::Borrowed(mime), text.clone())).collect())
     }
 
     fn read_next(&mut self, wait: Duration) -> Result<Option<String>, String> {
@@ -225,13 +241,15 @@ impl ChatClipboard for DataControlClipboard {
             return Ok(SavedClipboard(self.state.serving.clone()));
         }
         let Some(offer) = self.state.selection.clone() else { return Ok(SavedClipboard(Vec::new())) };
-        let types = self.state.offers.get(&offer.id()).cloned().unwrap_or_default();
+        let mut types = self.state.offers.get(&offer.id()).cloned().unwrap_or_default();
         // The Price Check placeholder isn't the player's.
         if types.iter().any(|mime| mime == PLACEHOLDER_TYPE) {
             return Ok(SavedClipboard(Vec::new()));
         }
+        // Text first: a slow image mustn't use up the time it gets.
+        types.sort_by_key(|mime| !TEXT_TYPES.contains(&mime.as_str()));
         let deadline = Instant::now() + SAVE_WAIT;
-        let mut saved = Vec::with_capacity(types.len());
+        let mut saved: Contents = Vec::with_capacity(types.len());
         let mut room = MAX_SAVED;
         // The text types hold the same text: read once.
         let mut text: Option<Rc<[u8]>> = None;
@@ -242,7 +260,7 @@ impl ChatClipboard for DataControlClipboard {
             }
             let is_text = TEXT_TYPES.contains(&mime.as_str());
             if let (true, Some(text)) = (is_text, &text) {
-                saved.push((mime, text.clone()));
+                saved.push((Cow::Owned(mime), text.clone()));
                 continue;
             }
             // X11 atoms other than text (TARGETS…) aren't content.
@@ -256,20 +274,28 @@ impl ChatClipboard for DataControlClipboard {
             if is_text {
                 text = Some(bytes.clone());
             }
-            saved.push((mime, bytes));
+            saved.push((Cow::Owned(mime), bytes));
         }
         Ok(SavedClipboard(saved))
     }
 
-    fn offer(&mut self, text: &str) -> Result<(), String> {
-        self.pastes_offered = self.state.pastes;
+    fn put(&mut self, text: &str) -> Result<(), String> {
         let text: Rc<[u8]> = Rc::from(text.as_bytes());
-        self.set_selection(TEXT_TYPES.into_iter().map(|mime| (mime.to_owned(), text.clone())).collect())
+        let hint = (Cow::Borrowed(SECRET_HINT_TYPE), Rc::from(&b"secret"[..]));
+        self.set_selection(TEXT_TYPES.into_iter().map(|mime| (Cow::Borrowed(mime), text.clone())).chain([hint]).collect())?;
+        // A clipboard manager reads what's new at once; only reads after
+        // that are the game's paste.
+        let settled = Instant::now() + MANAGERS_READ_WITHIN;
+        while Instant::now() < settled {
+            self.dispatch_until(settled)?;
+        }
+        self.pastes_before = self.state.pastes;
+        Ok(())
     }
 
     fn wait_pasted(&mut self, wait: Duration) -> Result<bool, String> {
         let deadline = Instant::now() + wait;
-        while self.state.pastes == self.pastes_offered {
+        while self.state.pastes == self.pastes_before {
             if Instant::now() >= deadline {
                 return Ok(false);
             }
@@ -437,7 +463,10 @@ impl Dispatch<source::ExtDataControlSourceV1, ()> for State {
         let ours = state.source.as_ref() == Some(source);
         match event {
             source::Event::Send { fd, mime_type } if ours => {
-                state.pastes += 1;
+                // Only text reads can be a paste (managers also read the hint).
+                if TEXT_TYPES.contains(&mime_type.as_str()) {
+                    state.pastes += 1;
+                }
                 if let Some((_, bytes)) = state.serving.iter().find(|(mime, _)| *mime == mime_type) {
                     // A reader that went away mustn't stop the overlay.
                     let _ = write_all(fd, bytes, Instant::now() + SERVE_WAIT);

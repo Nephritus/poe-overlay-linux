@@ -8,7 +8,8 @@ use std::time::Duration;
 use evdev::uinput::VirtualDevice;
 use evdev::{AttributeSet, EventType, InputEvent, KeyCode};
 
-use crate::poe1::keyboard::{Key, Keyboard, KeyboardError, Modifier};
+use crate::hotkeys::Modifier;
+use crate::poe1::keyboard::{Key, Keyboard, KeyboardError};
 
 /// Between key events, so the game sees each one.
 const KEY_GAP: Duration = Duration::from_millis(5);

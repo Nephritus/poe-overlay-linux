@@ -134,9 +134,9 @@ fn activate(
     let held = config.hotkeys.get(Action::PriceCheck).map(|hotkey| hotkey.modifiers().collect()).unwrap_or_default();
     let copier = ItemCopier::spawn(letters, held);
     let prices: Prices = Arc::new(Mutex::new(PriceSource::new(Http::new(), config.prices.league.clone())));
-    let route = follow_route(route_panel.clone(), trade_panel, &config);
+    let log_follower = follow_log(route_panel.clone(), trade_panel, &config);
     let settings = Settings { league: config.prices.league, client_txt: config.game.client_txt };
-    follow_settings(config_changes, settings, settings_notice, prices.clone(), currency_panel.clone(), route);
+    follow_settings(config_changes, settings, settings_notice, prices.clone(), currency_panel.clone(), log_follower);
     let grabber = grab_hotkeys(route_panel, config.hotkeys, action_sender);
     take_actions(actions, overlay.clone(), currency_panel, price_panel, copier, prices);
 
@@ -152,8 +152,9 @@ fn activate(
 }
 
 /// Shows the Route and moves it along as Client.txt reports Area changes and
-/// the player presses Previous/Next; progress is saved per Character.
-fn follow_route(panel: RoutePanel, trades: TradePanel, config: &Config) -> RouteFollower {
+/// the player presses Previous/Next (progress is saved per Character); Trade
+/// Requests in Client.txt go to the Trade Requests Panel.
+fn follow_log(panel: RoutePanel, trades: TradePanel, config: &Config) -> LogFollower {
     let route = Route::campaign(&config.route);
     for problem in route.problems() {
         eprintln!("poe-overlay: Route data: {problem}");
@@ -180,14 +181,14 @@ fn follow_route(panel: RoutePanel, trades: TradePanel, config: &Config) -> Route
     panel.on_previous(on_click(Leveling::previous_leg));
     panel.on_next(on_click(Leveling::next_leg));
 
-    let follower = RouteFollower { notice: panel.notice(), panel, leveling, trades, lines: RefCell::default() };
+    let follower = LogFollower { notice: panel.notice(), panel, leveling, trades, lines: RefCell::default() };
     follower.watch(log);
     follower
 }
 
 /// Feeds one Client.txt at a time into the Leveling session and the Trade
 /// Requests Panel.
-struct RouteFollower {
+struct LogFollower {
     panel: RoutePanel,
     leveling: Rc<RefCell<Leveling>>,
     trades: TradePanel,
@@ -197,7 +198,7 @@ struct RouteFollower {
     lines: RefCell<Option<async_channel::Receiver<String>>>,
 }
 
-impl RouteFollower {
+impl LogFollower {
     /// Follows another Client.txt from now on (one chosen in the settings).
     /// The `character` of its latest level-up is taken as a level-up would be.
     fn switch_to(&self, log: Option<PathBuf>, character: Option<String>) {
@@ -259,7 +260,7 @@ fn follow_settings(
     notice: Notice,
     prices: Prices,
     currency: CurrencyPanel,
-    route: RouteFollower,
+    log_follower: LogFollower,
 ) {
     glib::spawn_future_local(async move {
         while let Ok(loaded) = changes.recv().await {
@@ -283,7 +284,7 @@ fn follow_settings(
                 })
                 .await;
                 if let Ok((log, character)) = found {
-                    route.switch_to(log, character);
+                    log_follower.switch_to(log, character);
                 }
             }
             if config.prices.league != current.league {

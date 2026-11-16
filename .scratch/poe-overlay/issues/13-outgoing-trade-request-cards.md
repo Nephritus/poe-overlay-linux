@@ -15,7 +15,7 @@
 ### Implemented (agent, 2026-11-16, one commit with ticket 12)
 
 - Outgoing cards came with ticket 11 (blue border and name, "You asked NAME"); this adds Hideout `/hideout NAME`, Trade `/tradewith NAME`, Thank `@NAME Thanks, enjoy!` and Leave `/leave` (Sidekick's default; no character name needed, the user's choice). Same stack, ✕ and one-line-per-click sending as incoming cards.
-- **Tests:** the commands are in `each_card_button_sends_one_command_for_the_character_on_the_card` (`tests/chat.rs`).
+- **Tests:** the chat lines are in `each_card_button_sends_one_chat_line_for_the_character_on_the_card` (`tests/chat.rs`), which also pins which buttons each card has.
 - **Checked live:** an outgoing card on top of an incoming one; Hideout and Leave each sent exactly `\r`, the command, `\r`.
 
 **Needs a check (human):**

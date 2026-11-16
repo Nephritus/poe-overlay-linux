@@ -1,20 +1,21 @@
-//! Chat commands from Trade Request card buttons. Each click sends exactly
-//! one chat line (GGG's one action per input): the line goes on the
-//! clipboard and is pasted into chat (Enter, Ctrl+V, Enter), which works with
-//! any keyboard layout; the player's clipboard is put back afterwards.
+//! Chat lines from Trade Request card buttons. Each click sends exactly one
+//! chat line (GGG's one action per input): the line goes on the clipboard
+//! and is pasted into chat (Enter, Ctrl+V, Enter), which works with any
+//! keyboard layout; the player's clipboard is put back afterwards.
 
 use std::fmt;
 use std::time::Duration;
 
-use super::keyboard::{Key, Keyboard, KeyboardError, Modifier, UINPUT_RULE};
+use super::keyboard::{Key, Keyboard, KeyboardError, UINPUT_RULE};
 use super::trade_request::Direction;
+use crate::hotkeys::Modifier;
 
 /// How long the game gets to read the pasted line.
 const PASTE_WAIT: Duration = Duration::from_millis(1500);
 
-/// A card button.
+/// A button on a Trade Request card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CardAction {
+pub enum CardButton {
     Invite,
     Trade,
     Thank,
@@ -24,49 +25,39 @@ pub enum CardAction {
     LeaveParty,
 }
 
-impl CardAction {
-    pub const ALL: [CardAction; 7] = [
-        CardAction::Invite,
-        CardAction::Trade,
-        CardAction::Thank,
-        CardAction::Kick,
-        CardAction::Sold,
-        CardAction::VisitHideout,
-        CardAction::LeaveParty,
-    ];
-
+impl CardButton {
     /// A card's buttons: a buyer is invited to the player's hideout, the
     /// player visits a seller's.
-    pub fn of(direction: Direction) -> &'static [CardAction] {
+    pub fn of(direction: Direction) -> &'static [CardButton] {
         match direction {
-            Direction::Incoming => &[CardAction::Invite, CardAction::Trade, CardAction::Thank, CardAction::Kick, CardAction::Sold],
-            Direction::Outgoing => &[CardAction::VisitHideout, CardAction::Trade, CardAction::Thank, CardAction::LeaveParty],
+            Direction::Incoming => &[CardButton::Invite, CardButton::Trade, CardButton::Thank, CardButton::Kick, CardButton::Sold],
+            Direction::Outgoing => &[CardButton::VisitHideout, CardButton::Trade, CardButton::Thank, CardButton::LeaveParty],
         }
     }
 
     pub fn label(self) -> &'static str {
         match self {
-            CardAction::Invite => "Invite",
-            CardAction::Trade => "Trade",
-            CardAction::Thank => "Thank",
-            CardAction::Kick => "Kick",
-            CardAction::Sold => "Sold",
-            CardAction::VisitHideout => "Hideout",
-            CardAction::LeaveParty => "Leave",
+            CardButton::Invite => "Invite",
+            CardButton::Trade => "Trade",
+            CardButton::Thank => "Thank",
+            CardButton::Kick => "Kick",
+            CardButton::Sold => "Sold",
+            CardButton::VisitHideout => "Hideout",
+            CardButton::LeaveParty => "Leave",
         }
     }
-}
 
-/// The chat line `action` sends for the card's `character`.
-pub fn command(action: CardAction, character: &str) -> String {
-    match action {
-        CardAction::Invite => format!("/invite {character}"),
-        CardAction::Trade => format!("/tradewith {character}"),
-        CardAction::Thank => format!("@{character} Thanks, enjoy!"),
-        CardAction::Kick => format!("/kick {character}"),
-        CardAction::Sold => format!("@{character} Sorry, it's already sold."),
-        CardAction::VisitHideout => format!("/hideout {character}"),
-        CardAction::LeaveParty => "/leave".to_owned(),
+    /// The chat line the button sends for the card's `character`.
+    pub fn chat_line(self, character: &str) -> String {
+        match self {
+            CardButton::Invite => format!("/invite {character}"),
+            CardButton::Trade => format!("/tradewith {character}"),
+            CardButton::Thank => format!("@{character} Thanks, enjoy!"),
+            CardButton::Kick => format!("/kick {character}"),
+            CardButton::Sold => format!("@{character} Sorry, it's already sold."),
+            CardButton::VisitHideout => format!("/hideout {character}"),
+            CardButton::LeaveParty => "/leave".to_owned(),
+        }
     }
 }
 
@@ -76,8 +67,8 @@ pub trait ChatClipboard {
     type Saved;
     fn save(&mut self) -> Result<Self::Saved, String>;
     /// Puts `text` on the clipboard.
-    fn offer(&mut self, text: &str) -> Result<(), String>;
-    /// Waits up to `wait` for a program (the game) to read what was offered.
+    fn put(&mut self, text: &str) -> Result<(), String>;
+    /// Waits up to `wait` for the game to read what was put there.
     fn wait_pasted(&mut self, wait: Duration) -> Result<bool, String>;
     fn restore(&mut self, saved: Self::Saved) -> Result<(), String>;
 }
@@ -126,7 +117,7 @@ pub fn send_chat<C: ChatClipboard>(keyboard: &mut impl Keyboard, clipboard: &mut
 }
 
 fn paste_and_send(keyboard: &mut impl Keyboard, clipboard: &mut impl ChatClipboard, text: &str) -> Result<(), ChatError> {
-    clipboard.offer(text).map_err(ChatError::Clipboard)?;
+    clipboard.put(text).map_err(ChatError::Clipboard)?;
     keyboard.tap(Key::Enter)?;
     let ctrl = Key::Modifier(Modifier::Ctrl);
     keyboard.press(ctrl)?;

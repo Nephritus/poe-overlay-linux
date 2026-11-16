@@ -28,9 +28,11 @@ impl ChatSender {
             let mut keyboard = VirtualKeyboard::new(letters);
             let mut clipboard: Option<DataControlClipboard> = None;
             loop {
-                // Hands over the clipboard put back until a request comes.
+                // Hands over the clipboard put back until a request comes
+                // (or no one can send any more).
                 while incoming.is_empty()
-                    && let Some(connected) = clipboard.as_mut().filter(|connected| connected.offering())
+                    && !incoming.is_closed()
+                    && let Some(connected) = clipboard.as_mut().filter(|connected| connected.owns_selection())
                 {
                     if connected.serve(woken.as_fd()).is_err() {
                         clipboard = None;
@@ -39,12 +41,7 @@ impl ChatSender {
                     while rustix::io::read(&woken, &mut drained).is_ok_and(|read| read > 0) {}
                 }
                 let Ok((line, reply)) = incoming.recv_blocking() else { return };
-                // Connected again after a failure, e.g. a compositor restart.
-                let connected = match clipboard.take() {
-                    Some(connected) => Ok(connected),
-                    None => DataControlClipboard::connect(),
-                };
-                let sent = match connected {
+                let sent = match DataControlClipboard::reuse(&mut clipboard) {
                     Ok(mut connected) => {
                         let sent = send_chat(&mut keyboard, &mut connected, &line);
                         if !matches!(sent, Err(ChatError::Clipboard(_))) {

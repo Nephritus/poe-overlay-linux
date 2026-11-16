@@ -5,7 +5,8 @@
 use std::fmt;
 use std::time::Duration;
 
-use super::keyboard::{Key, Keyboard, KeyboardError, Modifier, UINPUT_RULE};
+use super::keyboard::{Key, Keyboard, KeyboardError, UINPUT_RULE};
+use crate::hotkeys::Modifier;
 
 /// How long the game gets to put the item on the clipboard.
 const COPY_WAIT: Duration = Duration::from_millis(1500);

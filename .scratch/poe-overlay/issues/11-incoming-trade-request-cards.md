@@ -21,6 +21,7 @@
 - **Panel:** top centre (left/right are the stash and inventory), 320 px, above nothing else but under the Price Check and Currency Panels. Buyers' cards gold, outgoing blue. A card shows who, item, price, stash tab and position, and the note; bulk ones have no stash line. Five at most, the oldest pushed out; ✕ closes one; the Panel hides with no cards. Cards stay while the game loses and regains focus.
 - **Tests:** `tests/trade_request.rs` (8): incoming with every field, guild tag and a tab name with a semicolon, outgoing, bulk, bulk with full stop and note, note after the stash spot, unpriced listing, plain whisper / other channel / Russian whisper → none. Each fails when the code it covers is broken (one mutation, `rsplit` vs `split` on the stash marker, was equivalent; the plainer `split` stays).
 - **Checked live:** six whispers appended to a temporary Client.txt (plus a plain one): five cards, newest first, the plain whisper ignored; a sixth pushed out the oldest; ✕ on the bulk card closed it with the game still focused and taking keys.
+- **After review:** a note or a private league name containing " in " no longer moves the price (prices are split at the first " in " after them; `words_in_a_note_or_league_name_dont_move_the_price`). The Panel is centred whenever the Overlay gets its size, so a whisper read before the game was ever focused no longer leaves its card at the screen's left edge (checked live).
 
 **Needs a check (human):**
 

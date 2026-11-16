@@ -60,10 +60,11 @@ pub fn parse(message: &str) -> Option<TradeRequest> {
         let (tab, spot) = spot.rsplit_once("\"; position: left ")?;
         let (left, spot) = spot.split_once(", top ")?;
         let (top, note) = spot.split_once(')')?;
-        let (item_and_price, _league) = wanted.rsplit_once(" in ")?;
-        let (item, price) = match item_and_price.split_once(" listed for ") {
-            Some((item, price)) => (item, Some(price)),
-            None => (item_and_price, None),
+        // A price is an amount and a currency, never with " in "; a league
+        // name (private leagues) or an item name may have one.
+        let (item, price) = match wanted.split_once(" listed for ") {
+            Some((item, price_and_league)) => (item, Some(price_and_league.split_once(" in ")?.0)),
+            None => (wanted.rsplit_once(" in ")?.0, None),
         };
         let stash = StashSpot { tab: tab.to_owned(), left: left.parse().ok()?, top: top.parse().ok()? };
         return Some(request(item, price, Some(stash), note));
@@ -71,7 +72,7 @@ pub fn parse(message: &str) -> Option<TradeRequest> {
     // `ITEM for my PRICE in LEAGUE`, once with a full stop and a note.
     let rest = body.strip_prefix("Hi, I'd like to buy your ")?;
     let (item, rest) = rest.split_once(" for my ")?;
-    let (price, league) = rest.rsplit_once(" in ")?;
+    let (price, league) = rest.split_once(" in ")?;
     let note = league.split_once('.').map_or("", |(_, note)| note);
     Some(request(item, Some(price), None, note))
 }

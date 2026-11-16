@@ -3,8 +3,8 @@
 
 use crate::clipboard::DataControlClipboard;
 use crate::game_cursor::GameCursor;
+use crate::hotkeys::Modifier;
 use crate::poe1::item_copy::{CopyError, copy_item};
-use crate::poe1::keyboard::Modifier;
 use crate::uinput::{LetterKeys, VirtualKeyboard};
 
 pub struct Copied {
@@ -30,12 +30,7 @@ impl ItemCopier {
             let mut cursor = GameCursor::default();
             while let Ok(reply) = incoming.recv_blocking() {
                 let left_half = cursor.on_left_half();
-                // Connected again after a failure, e.g. a compositor restart.
-                let connected = match clipboard.take() {
-                    Some(clipboard) => Ok(clipboard),
-                    None => DataControlClipboard::connect(),
-                };
-                let text = match connected {
+                let text = match DataControlClipboard::reuse(&mut clipboard) {
                     Ok(mut connected) => {
                         let text = copy_item(&mut keyboard, &mut connected, &held);
                         if !matches!(text, Err(CopyError::Clipboard(_))) {

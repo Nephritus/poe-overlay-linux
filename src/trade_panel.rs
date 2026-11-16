@@ -1,13 +1,15 @@
 //! The Trade Requests Panel: one card per Trade Request read from Client.txt,
 //! newest on top, at the top centre of the screen. Cards stay until closed;
-//! nothing in the log removes them, and a card's buttons send one chat
-//! command per click, never on a log event.
+//! nothing in the log removes them, and a card's buttons send one chat line
+//! per click, never on a log event.
+
+use std::time::Duration;
 
 use gtk::prelude::*;
 
 use crate::chat_sender::ChatSender;
 use crate::overlay_surface::{OverlaySurface, PanelKind};
-use crate::poe1::chat::{CardAction, command};
+use crate::poe1::chat::CardButton;
 use crate::poe1::trade_request::{Direction, TradeRequest};
 
 pub const CSS: &str = "
@@ -25,7 +27,7 @@ const WIDTH: i32 = 320;
 const TOP: f64 = 60.0;
 
 /// After the Overlay gives the keyboard back, until the game has it again.
-const KEYS_BACK: std::time::Duration = std::time::Duration::from_millis(200);
+const KEYS_BACK: Duration = Duration::from_millis(200);
 const NOT_IN_FRONT: &str = "Not sent: the game isn't in front.";
 
 #[derive(Clone)]
@@ -36,12 +38,18 @@ pub struct TradePanel {
 }
 
 impl TradePanel {
-    /// Adds the (empty, hidden) Panel to `overlay`.
+    /// Adds the (empty, hidden) Panel to `overlay`, centred on its output.
     pub fn new(overlay: &OverlaySurface, chat: ChatSender) -> TradePanel {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
         root.set_size_request(WIDTH, -1);
         overlay.add_panel(&root, 0.0, TOP, PanelKind::Always);
         root.set_visible(false);
+        let (centred, mover) = (root.downgrade(), overlay.clone());
+        overlay.connect_width(move |width| {
+            if let Some(root) = centred.upgrade() {
+                mover.move_panel(&root, f64::from((width - WIDTH) / 2), TOP);
+            }
+        });
         TradePanel { root, overlay: overlay.clone(), chat }
     }
 
@@ -50,7 +58,7 @@ impl TradePanel {
         let (card, close) = card(request);
         let status = label("", "panel-error");
         status.set_visible(false);
-        card.append(&action_buttons(request, &self.chat, &self.overlay, &status));
+        card.append(&self.buttons(request, &status));
         card.append(&status);
         let (panel, closed) = (self.root.downgrade(), card.downgrade());
         close.connect_clicked(move |_| {
@@ -68,12 +76,39 @@ impl TradePanel {
             child = oldest.next_sibling();
             self.root.remove(&oldest);
         }
-        // Centred on the output, once its width is known.
-        let width = self.overlay.width();
-        if width > 0 {
-            self.overlay.move_panel(&self.root, f64::from((width - WIDTH) / 2), TOP);
-        }
         self.root.set_visible(true);
+    }
+
+    /// The card's buttons, each sending one chat line for its character;
+    /// problems show in `status`.
+    fn buttons(&self, request: &TradeRequest, status: &gtk::Label) -> gtk::Box {
+        let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        buttons.add_css_class("linked");
+        for &card_button in CardButton::of(request.direction) {
+            // Pointer-only: clicking it leaves the keyboard with the game.
+            let button = gtk::Button::builder().label(card_button.label()).focusable(false).focus_on_click(false).hexpand(true).build();
+            button.add_css_class("panel-choice");
+            let line = card_button.chat_line(&request.character);
+            let (chat, overlay, status) = (self.chat.clone(), self.overlay.clone(), status.clone());
+            button.connect_clicked(move |button| {
+                let (line, chat, overlay, status, button) = (line.clone(), chat.clone(), overlay.clone(), status.clone(), button.clone());
+                gtk::glib::spawn_future_local(async move {
+                    button.set_sensitive(false);
+                    // Keys typed in a Price Check box go back to the game first.
+                    if overlay.release_keyboard() {
+                        gtk::glib::timeout_future(KEYS_BACK).await;
+                    }
+                    let sent = if overlay.game_focused() { chat.send(line).await.map_err(|err| err.to_string()) } else { Err(NOT_IN_FRONT.to_owned()) };
+                    button.set_sensitive(true);
+                    status.set_visible(sent.is_err());
+                    if let Err(err) = sent {
+                        status.set_label(&err);
+                    }
+                });
+            });
+            buttons.append(&button);
+        }
+        buttons
     }
 }
 
@@ -81,17 +116,13 @@ impl TradePanel {
 /// returns its ✕ button too.
 fn card(request: &TradeRequest) -> (gtk::Box, gtk::Button) {
     let card = gtk::Box::new(gtk::Orientation::Vertical, 2);
-    let side = match request.direction {
-        Direction::Incoming => "incoming",
-        Direction::Outgoing => "outgoing",
+    let (side, who) = match request.direction {
+        Direction::Incoming => ("incoming", format!("{} wants to buy", request.character)),
+        Direction::Outgoing => ("outgoing", format!("You asked {}", request.character)),
     };
     for class in ["panel", "trade-card", side] {
         card.add_css_class(class);
     }
-    let who = match request.direction {
-        Direction::Incoming => format!("{} wants to buy", request.character),
-        Direction::Outgoing => format!("You asked {}", request.character),
-    };
     let who = label(&who, "trade-card-who");
     who.set_hexpand(true);
     // Pointer-only: clicking it leaves the keyboard with the game.
@@ -113,38 +144,6 @@ fn card(request: &TradeRequest) -> (gtk::Box, gtk::Button) {
         card.append(&label(&format!("“{note}”"), "panel-status"));
     }
     (card, close)
-}
-
-/// The card's buttons, each sending one chat command for its character;
-/// problems show in `status`.
-fn action_buttons(request: &TradeRequest, chat: &ChatSender, overlay: &OverlaySurface, status: &gtk::Label) -> gtk::Box {
-    let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    buttons.add_css_class("linked");
-    for &action in CardAction::of(request.direction) {
-        // Pointer-only: clicking it leaves the keyboard with the game.
-        let button = gtk::Button::builder().label(action.label()).focusable(false).focus_on_click(false).hexpand(true).build();
-        button.add_css_class("panel-choice");
-        let line = command(action, &request.character);
-        let (chat, overlay, status) = (chat.clone(), overlay.clone(), status.clone());
-        button.connect_clicked(move |button| {
-            let (line, chat, overlay, status, button) = (line.clone(), chat.clone(), overlay.clone(), status.clone(), button.clone());
-            gtk::glib::spawn_future_local(async move {
-                button.set_sensitive(false);
-                // Keys typed in a Price Check box go back to the game first.
-                if overlay.release_keyboard() {
-                    gtk::glib::timeout_future(KEYS_BACK).await;
-                }
-                let sent = if overlay.game_focused() { chat.send(line).await.map_err(|err| err.to_string()) } else { Err(NOT_IN_FRONT.to_owned()) };
-                button.set_sensitive(true);
-                status.set_visible(sent.is_err());
-                if let Err(err) = sent {
-                    status.set_label(&err);
-                }
-            });
-        });
-        buttons.append(&button);
-    }
-    buttons
 }
 
 fn label(text: &str, class: &str) -> gtk::Label {

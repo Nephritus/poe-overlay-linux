@@ -5,31 +5,26 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use poe_overlay::poe1::chat::{CardAction, ChatClipboard, ChatError, command, send_chat};
-use poe_overlay::poe1::keyboard::{Key, Keyboard, KeyboardError, Modifier};
+use poe_overlay::hotkeys::Modifier;
+use poe_overlay::poe1::chat::{CardButton, ChatClipboard, ChatError, send_chat};
+use poe_overlay::poe1::keyboard::{Key, Keyboard, KeyboardError};
+use poe_overlay::poe1::trade_request::Direction;
 
 #[test]
-fn each_card_button_sends_one_command_for_the_character_on_the_card() {
-    let commands: Vec<String> = CardAction::ALL.iter().map(|&action| command(action, "Tyrael_Buys")).collect();
+fn each_card_button_sends_one_chat_line_for_the_character_on_the_card() {
+    let lines = |direction, character| CardButton::of(direction).iter().map(|button| button.chat_line(character)).collect::<Vec<_>>();
 
     assert_eq!(
-        commands,
-        [
-            "/invite Tyrael_Buys",
-            "/tradewith Tyrael_Buys",
-            "@Tyrael_Buys Thanks, enjoy!",
-            "/kick Tyrael_Buys",
-            "@Tyrael_Buys Sorry, it's already sold.",
-            "/hideout Tyrael_Buys",
-            "/leave",
-        ]
+        lines(Direction::Incoming, "Tyrael_Buys"),
+        ["/invite Tyrael_Buys", "/tradewith Tyrael_Buys", "@Tyrael_Buys Thanks, enjoy!", "/kick Tyrael_Buys", "@Tyrael_Buys Sorry, it's already sold."]
     );
+    assert_eq!(lines(Direction::Outgoing, "Seller_Of_Mitts"), ["/hideout Seller_Of_Mitts", "/tradewith Seller_Of_Mitts", "@Seller_Of_Mitts Thanks, enjoy!", "/leave"]);
 }
 
 #[derive(Debug, Clone, PartialEq)]
 enum Event {
     Save,
-    Offer(String),
+    Put(String),
     Press(Key),
     Release(Key),
     WaitPasted,
@@ -80,8 +75,8 @@ impl ChatClipboard for FakeClipboard {
         self.before.ok_or_else(|| "no clipboard".to_owned())
     }
 
-    fn offer(&mut self, text: &str) -> Result<(), String> {
-        self.log.borrow_mut().push(Event::Offer(text.to_owned()));
+    fn put(&mut self, text: &str) -> Result<(), String> {
+        self.log.borrow_mut().push(Event::Put(text.to_owned()));
         Ok(())
     }
 
@@ -119,7 +114,7 @@ fn command_is_pasted_into_chat_and_the_players_clipboard_put_back() {
         events,
         [
             Save,
-            Offer("/invite Tyrael_Buys".into()),
+            Put("/invite Tyrael_Buys".into()),
             Press(Key::Enter),
             Release(Key::Enter),
             Press(CTRL),

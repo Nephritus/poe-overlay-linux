@@ -5,8 +5,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
+use poe_overlay::hotkeys::Modifier;
 use poe_overlay::poe1::item_copy::{Clipboard, CopyError, copy_item};
-use poe_overlay::poe1::keyboard::{Key, Keyboard, KeyboardError, Modifier};
+use poe_overlay::poe1::keyboard::{Key, Keyboard, KeyboardError};
 
 #[derive(Debug, Clone, PartialEq)]
 enum Event {

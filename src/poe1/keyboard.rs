@@ -1,7 +1,7 @@
 //! Keys pressed for the player in the game: the Price Check copy and chat
-//! commands from Trade Request cards.
+//! lines from Trade Request cards.
 
-pub use crate::hotkeys::Modifier;
+use crate::hotkeys::Modifier;
 
 /// Keys the overlay presses, by what they do rather than where they sit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

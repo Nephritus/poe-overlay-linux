@@ -146,6 +146,25 @@ impl OverlaySurface {
         self.window.width()
     }
 
+    /// Calls `resized` with the output's width whenever it changes: when the
+    /// Overlay is first shown and when it moves to another output. Called
+    /// once the surface is laid out: moving a Panel during layout would ask
+    /// for another layout, endlessly.
+    pub fn connect_width(&self, resized: impl Fn(i32) + 'static) {
+        let resized = Rc::new(resized);
+        let last = Rc::new(Cell::new(0));
+        self.window.connect_realize(move |window| {
+            let surface = window.surface().expect("realized window has a surface");
+            let (resized, last) = (resized.clone(), last.clone());
+            surface.connect_layout(move |_, width, _| {
+                if last.replace(width) != width {
+                    let resized = resized.clone();
+                    gtk::glib::idle_add_local_once(move || resized(width));
+                }
+            });
+        });
+    }
+
     /// Whether the game is focused (the Overlay shows only then) and has the
     /// keyboard: not while the player types in a Panel.
     pub fn game_focused(&self) -> bool {
