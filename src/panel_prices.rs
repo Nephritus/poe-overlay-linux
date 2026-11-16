@@ -82,9 +82,9 @@ fn format_price(value: f64) -> String {
     format!("{value:.decimals$}")
 }
 
-/// Removes every child of `grid`.
-pub fn clear(grid: &gtk::Grid) {
-    while let Some(child) = grid.first_child() {
-        grid.remove(&child);
+/// Removes every child of `container` (a Box or a Grid).
+pub fn clear(container: &impl IsA<gtk::Widget>) {
+    while let Some(child) = container.as_ref().first_child() {
+        child.unparent();
     }
 }

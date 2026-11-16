@@ -23,6 +23,7 @@
 - **Tests:** `no_window_focused_while_the_game_is_open_is_told_apart_from_another_window_focused` (`tests/game_focus.rs`), `typed_bounds_are_numbers_or_nothing`, `typed_minimum_and_maximum_are_searched_and_an_empty_side_left_out` (`tests/trade_query.rs`); each fails when the code it covers is broken.
 - **Checked live** (stand-in game logging every key it gets, clicks and keys through virtual devices): typing `80w` went into the box with the Overlay still shown and nothing reaching the game; Enter searched (Search greyed, then "1 listed online · 10 chaos" for an edited search) and the next key reached the game; junk was marked red with keys kept; Esc and ✕ each gave the keys back; clicking a box holding 65 and typing 50 left 50.
 - **README/GLOSSARY:** the Overlay takes the keyboard only while the player types in a bound box.
+- **After review (tickets 20–22, fixed in a follow-up commit):** the keys are given back by Enter also while a search is out; if no window takes them back within half a second (the player left for an empty workspace while typing), the Overlay hides as when the game loses focus, checked live; `NoWindowFocused` carries no output (it was never read); two leftover "never takes keyboard focus" doc comments updated. Not changed: the Price Check hotkey doesn't close the Panel while typing (its X grab is off while the Overlay holds the keys); Esc or ✕ does.
 
 **Needs a check (human):**
 

@@ -266,8 +266,8 @@ impl PricePanel {
         self.shown.take();
         self.status.set_visible(false);
         self.search.set_visible(true);
-        let types: Vec<String> = item_types(query, class).collect();
-        fill_choice(&self.item_type, types.iter().map(String::as_str), usize::from(query.of_class && query.base_type.is_some()));
+        let any_of_class = format!("Any {class}");
+        fill_choice(&self.item_type, item_types(query, Some(&any_of_class)), usize::from(query.of_class && query.base_type.is_some()));
         let rarity = RARITIES.iter().position(|(_, rarity)| *rarity == query.rarity).unwrap_or(0);
         fill_choice(&self.rarity, RARITIES.iter().map(|(label, _)| *label), rarity);
         let sale = SALES.iter().position(|(_, kind)| *kind == query.sale).unwrap_or(0);
@@ -336,13 +336,15 @@ impl PricePanel {
     /// them. A bound that isn't a number is marked and nothing is sent.
     fn search_again(&self) {
         let mut search = self.shown.borrow_mut();
-        let Some(shown) = search.as_mut() else { return };
+        // A search is out: its answer brings Search back.
+        let Some(shown) = search.as_mut() else { return self.overlay.release_keyboard() };
         let rows = self.rows.borrow();
         let mut typed_wrong = false;
         shown.query.sale = SALES[chosen(&self.sale)].1;
         shown.query.rarity = RARITIES[chosen(&self.rarity)].1;
-        // The base comes first when there is one.
-        shown.query.of_class = shown.query.base_type.is_none() || chosen(&self.item_type) == 1;
+        // The base comes first when there is one; without it the search
+        // takes the class anyway.
+        shown.query.of_class = chosen(&self.item_type) == 1;
         for (filter, row) in shown.query.filters.iter_mut().zip(rows.iter()) {
             filter.enabled = row.checkbox.is_active();
             for (entry, side) in [(&row.min, &mut filter.min), (&row.max, &mut filter.max)] {
@@ -416,9 +418,8 @@ const RARITIES: [(&str, Option<Rarity>); 4] = [("Any non-unique", None), ("Rare"
 
 /// The item types the player picks from: the item's base, then any item of
 /// its class, where the search has each.
-fn item_types<'a>(query: &'a TradeQuery, class: &str) -> impl Iterator<Item = String> + 'a {
-    let any = query.class_category.map(|_| format!("Any {class}"));
-    query.base_type.map(str::to_owned).into_iter().chain(any)
+fn item_types<'a>(query: &TradeQuery<'a>, any_of_class: Option<&'a str>) -> impl Iterator<Item = &'a str> {
+    query.base_type.into_iter().chain(query.class_category.and(any_of_class))
 }
 
 /// Labels a choice row in the options grid.
@@ -438,9 +439,7 @@ const SALES: [(&str, Option<ListingKind>); 3] = [("Both", None), ("Instant buyou
 /// Fills `choice` with linked toggle buttons, one per label, `selected` on;
 /// exactly one is on at a time. Pointer-only, like every Panel button.
 fn fill_choice<'a>(choice: &gtk::Box, labels: impl IntoIterator<Item = &'a str>, selected: usize) {
-    while let Some(child) = choice.first_child() {
-        choice.remove(&child);
-    }
+    clear(choice);
     let mut first: Option<gtk::ToggleButton> = None;
     for (index, label) in labels.into_iter().enumerate() {
         let button = gtk::ToggleButton::builder().label(label).active(index == selected).focusable(false).focus_on_click(false).build();

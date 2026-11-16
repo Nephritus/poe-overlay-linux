@@ -42,7 +42,7 @@ fn no_window_focused_while_the_game_is_open_is_told_apart_from_another_window_fo
 
     focus.apply(updated(1, window("steam_app_238960", "Path of Exile", false, &["DP-2"])));
 
-    assert_eq!(focus.visibility(), Visibility::NoWindowFocused { output: Some("DP-2".into()) });
+    assert_eq!(focus.visibility(), Visibility::NoWindowFocused);
 }
 
 #[test]

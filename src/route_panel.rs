@@ -122,7 +122,7 @@ fn label(text: &str, class: &str) -> gtk::Label {
     label
 }
 
-/// A pointer-only button: the overlay never takes keyboard focus.
+/// A pointer-only button: clicking it leaves the keyboard with the game.
 fn nav_button(text: &str, tooltip: &str) -> gtk::Button {
     let button = gtk::Button::builder().label(text).tooltip_text(tooltip).focusable(false).focus_on_click(false).build();
     button.add_css_class("panel-button");

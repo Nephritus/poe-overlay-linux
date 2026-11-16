@@ -361,7 +361,8 @@ impl<'d> TradeQuery<'d> {
             "stats": [{ "type": "and", "filters": filters }],
             "filters": { "type_filters": { "filters": { "rarity": { "option": rarity } } } },
         });
-        match (self.of_class, self.class_category, self.base_type) {
+        // Without a known base, the class is all there is to search.
+        match (self.of_class || self.base_type.is_none(), self.class_category, self.base_type) {
             (true, Some(category), _) => query["filters"]["type_filters"]["filters"]["category"] = serde_json::json!({ "option": category }),
             (_, _, Some(base_type)) => query["type"] = base_type.into(),
             _ => {}

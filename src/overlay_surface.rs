@@ -35,6 +35,9 @@ window.poe-overlay { background: transparent; }
 .panel-choice:checked { background: rgb(204, 153, 51); color: rgb(20, 20, 30); }
 ";
 
+/// How soon a window takes the keyboard back after the Overlay gives it up.
+const KEYS_BACK_WITHIN: std::time::Duration = std::time::Duration::from_millis(500);
+
 /// How long a Panel stays shown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelKind {
@@ -57,6 +60,8 @@ pub struct OverlaySurface {
     panels: Rc<RefCell<Vec<Panel>>>,
     /// Whether the Overlay holds the keyboard (the player types in a Panel).
     typing: Rc<Cell<bool>>,
+    /// The last focus change left no window focused.
+    no_window_focused: Rc<Cell<bool>>,
 }
 
 impl OverlaySurface {
@@ -84,7 +89,7 @@ impl OverlaySurface {
         let fixed = gtk::Fixed::new();
         window.set_child(Some(&fixed));
 
-        let surface = Self { window, fixed, panels: Rc::default(), typing: Rc::default() };
+        let surface = Self { window, fixed, panels: Rc::default(), typing: Rc::default(), no_window_focused: Rc::default() };
         surface.track_click_area();
         surface
     }
@@ -155,28 +160,37 @@ impl OverlaySurface {
     }
 
     /// Gives the keyboard back to the game; also done whenever a Panel
-    /// closes or the game loses focus.
+    /// closes or the game loses focus. If no window takes the keys soon
+    /// after (the player left for an empty workspace while typing), the
+    /// Overlay hides as when the game loses focus.
     pub fn release_keyboard(&self) {
         if self.typing.replace(false) {
             self.window.set_keyboard_mode(KeyboardMode::None);
             GtkWindowExt::set_focus(&self.window, None::<&gtk::Widget>);
+            let surface = self.clone();
+            gtk::glib::timeout_add_local_once(KEYS_BACK_WITHIN, move || {
+                if surface.no_window_focused.get() && !surface.typing.get() {
+                    surface.follow_game(&Visibility::Hidden);
+                }
+            });
         }
     }
 
-    /// Calls `typing` with whether the Overlay holds the keyboard, whenever
-    /// that changes.
-    pub fn connect_keyboard(&self, typing: impl Fn(bool) + 'static) {
-        self.window.connect_is_active_notify(move |window| typing(window.is_active()));
+    /// Calls `active` whenever the Overlay's window gains or loses the
+    /// keyboard (it holds it only while the player types in a Panel).
+    pub fn connect_keyboard(&self, active: impl Fn(bool) + 'static) {
+        self.window.connect_is_active_notify(move |window| active(window.is_active()));
     }
 
     /// Follows the game window's focus: shows the Overlay on the game's
     /// output, or hides it and closes `Toggled` Panels.
     pub fn follow_game(&self, visibility: &Visibility) {
+        self.no_window_focused.set(*visibility == Visibility::NoWindowFocused);
         let output = match visibility {
             Visibility::Shown { output } => output,
             // The Overlay itself holds the keyboard.
-            Visibility::NoWindowFocused { .. } if self.typing.get() => return,
-            Visibility::Hidden | Visibility::NoWindowFocused { .. } => {
+            Visibility::NoWindowFocused if self.typing.get() => return,
+            Visibility::Hidden | Visibility::NoWindowFocused => {
                 self.release_keyboard();
                 self.window.set_visible(false);
                 for panel in self.panels.borrow().iter().filter(|p| p.kind == PanelKind::Toggled) {

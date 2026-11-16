@@ -133,7 +133,7 @@ impl<H: TradeHttp> TradeSource<H> {
         Self { http, search_limits: RateLimits::default(), fetch_limits: RateLimits::default(), refused_until: None, searched: None, found: None }
     }
 
-    /// The cheapest online listings like `query` in `league`. The same search
+    /// The cheapest listings like `query` in `league`. The same search
     /// within 5 minutes reuses the last answer, also when only its fetch was
     /// held back by a rate limit.
     pub fn listings(&mut self, query: &TradeQuery, league: &str, now: Instant) -> Result<Arc<Listings>, TradeError> {

@@ -364,6 +364,16 @@ fn an_item_class_the_trade_site_has_no_category_for_is_searched_by_its_base() {
 }
 
 #[test]
+fn a_base_missing_from_the_trade_data_is_searched_by_its_class_from_the_first_search() {
+    let gloves = query(&gloves_as("Gloves", "Zzyzx Qwerty"));
+    assert_eq!(gloves.base_type, None);
+
+    let json = json(&gloves);
+
+    assert_eq!(json["query"]["filters"]["type_filters"]["filters"]["category"], serde_json::json!({ "option": "armour.gloves" }));
+}
+
+#[test]
 fn rarity_choice_narrows_the_search() {
     let mut gloves = query(&item("rare-gloves-death-nails"));
     let rarity = |gloves: &TradeQuery| json(gloves)["query"]["filters"]["type_filters"]["filters"]["rarity"]["option"].clone();

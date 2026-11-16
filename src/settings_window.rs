@@ -1,6 +1,6 @@
-//! The Settings window: a normal window in a process of its own, the one
-//! place where the player types and chooses settings (the Overlay never takes
-//! keyboard focus). Saving writes config.toml, which a running overlay
+//! The Settings window: a normal window in a process of its own, where the
+//! player types and chooses settings (the Overlay takes the keyboard only for
+//! a Price Check bound). Saving writes config.toml, which a running overlay
 //! re-reads within a second.
 
 use std::cell::RefCell;
