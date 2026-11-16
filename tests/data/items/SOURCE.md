@@ -4,7 +4,9 @@ Real PoE 1 item texts as the game copies them, taken from the tests of
 [Sidekick](https://github.com/Sidekick-Poe/Sidekick) (commit `615a98a`,
 2026-11-14), `tests/Sidekick.Apis.Poe.Tests/Poe1English/Parser` and
 `Poe1Korean/Parser`. One stray `;` after the unidentified Jade Hatchet's last
-line was removed.
+line was removed. The `rare-*` (other than `rare-wand`), `magic-*` and
+`normal-*` samples come from commit `6acfa09` (2026-11-16), with C#'s doubled
+quotes undone.
 
 MIT License
 

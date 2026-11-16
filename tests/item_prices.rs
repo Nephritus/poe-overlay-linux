@@ -182,7 +182,7 @@ fn unidentified_unique_lists_the_uniques_of_its_base() {
 #[test]
 fn rare_items_get_a_reason_instead_of_a_price() {
     let ninja = FakeNinja::default();
-    let rare = item("Wands", "Miracle Chant", ItemKind::Other { rarity: "Rare".into() });
+    let rare = item("Wands", "Miracle Chant", ItemKind::Other { rarity: "Rare".into(), base_line: "Imbued Wand".into(), modifiers: vec![] });
 
     let err = PriceSource::new(&ninja, None).item_prices(&rare, Instant::now()).unwrap_err();
 

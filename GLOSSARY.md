@@ -65,3 +65,7 @@ _Avoid_: Whisper (any private chat message, not just trades), offer
 **Currency Rate**:
 The current exchange ratio between two currency items.
 _Avoid_: Price (reserved for item listings), conversion
+
+**Modifier**:
+One line of an item's properties that rolls (`+73 to maximum Life`), by source: implicit, explicit, crafted, fractured or enchant; searched on the trade site as a stat.
+_Avoid_: Affix (only explicit prefixes and suffixes), stat (the trade site's id for a modifier's text)

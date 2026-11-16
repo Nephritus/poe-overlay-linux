@@ -1,0 +1,18 @@
+Item Class: Rings
+Rarity: Rare
+Brood Circle
+Ruby Ring
+--------
+Requirements:
+Level: 36
+--------
+Item Level: 76
+--------
+Anger has 18% increased Aura Effect (implicit)
+--------
++16 to all Attributes
++31 to Intelligence
+Adds 8 to 13 Physical Damage to Attacks
+31% increased Mana Regeneration Rate
+--------
+Corrupted

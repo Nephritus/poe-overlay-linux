@@ -95,7 +95,16 @@ Hover over an item in game and press the Price Check hotkey (Alt+D). The overlay
 - **Currency** and other stackables (oils, essences, fossils, fragments, scarabs…), each and for the stack.
 - **Divination cards**, each and for the stack.
 
-Other items get a short reason instead (a trade-site search comes later). Pressing the hotkey again closes the Panel when the pointer is on the same item or on nothing; on another item, it prices that one. The ✕ button and switching away from the game close it too. The game must be the English client.
+Pressing the hotkey again closes the Panel when the pointer is on the same item or on nothing; on another item, it prices that one. The ✕ button and switching away from the game close it too. The game must be the English client.
+
+### Rare, magic and normal items
+
+poe.ninja doesn't price these, so the Panel offers **Open on trade site**: your browser opens the [official trade site](https://www.pathofexile.com/trade) with a search for items like it filled in, in the league prices come from. The search asks for online sellers, the same base type, and at least 90% of the item's:
+
+- total life (flat life plus half the strength, as the trade site counts it), total elemental resistance, chaos resistance, strength, dexterity and intelligence, counting every modifier;
+- other explicit (and fractured) modifiers, each on its own. Implicit and crafted modifiers only count toward the totals.
+
+Adjust it on the site. A modifier the trade site has no stat for is listed in the Panel as not searched. The stats and base types come from a snapshot of the trade site's data in `data/trade`, refreshed with `data/trade/update.sh` when a league adds new ones.
 
 The clipboard is read once per press (GGG's rule for tools). Before the copy, the overlay puts a placeholder on the clipboard: with Proton 11 the game's copy otherwise doesn't reach other programs. The copied item stays on your clipboard, as when you copy it yourself.
 
@@ -135,4 +144,4 @@ Progress is saved per Character in `~/.local/state/poe-overlay/progress.toml` (o
 
 ## Credits
 
-Leveling Route data comes from [exile-leveling](https://github.com/HeartofPhos/exile-leveling) by HeartofPhos, used under the MIT License (see `data/exile-leveling/LICENSE`). Game names and text belong to Grinding Gear Games. `poe-overlay credits` prints this notice and the license.
+Leveling Route data comes from [exile-leveling](https://github.com/HeartofPhos/exile-leveling) by HeartofPhos, used under the MIT License (see `data/exile-leveling/LICENSE`). Trade stats and base types come from the trade site (`data/trade`). Game names and text belong to Grinding Gear Games. `poe-overlay credits` prints this notice and the license.

@@ -1,7 +1,7 @@
 //! Item text as the game copies it (Ctrl+Alt+C), from real samples; see
 //! tests/data/items/SOURCE.md.
 
-use poe_overlay::poe1::item::{Item, ItemKind, ItemTextError, parse};
+use poe_overlay::poe1::item::{Item, ItemKind, ItemTextError, ModifierSource, parse};
 
 fn sample(name: &str) -> String {
     std::fs::read_to_string(format!("{}/tests/data/items/{name}.txt", env!("CARGO_MANIFEST_DIR"))).unwrap()
@@ -65,11 +65,96 @@ fn unidentified_unique_is_known_by_its_base_only() {
     assert_eq!((hatchet.name.as_str(), hatchet.kind), ("Jade Hatchet", ItemKind::UnidentifiedUnique));
 }
 
-#[test]
-fn rare_items_are_other() {
-    let wand = item("rare-wand");
+/// The kind of a rare, magic or normal item, split into parts.
+fn other(name: &str) -> (String, String, Vec<(ModifierSource, String)>) {
+    match item(name).kind {
+        ItemKind::Other { rarity, base_line, modifiers } => {
+            (rarity, base_line, modifiers.into_iter().map(|modifier| (modifier.source, modifier.text)).collect())
+        }
+        kind => panic!("{name}: {kind:?}"),
+    }
+}
 
-    assert_eq!((wand.class.as_str(), wand.kind), ("Wands", ItemKind::Other { rarity: "Rare".into() }));
+fn explicit(texts: &[&str]) -> Vec<(ModifierSource, String)> {
+    texts.iter().map(|text| (ModifierSource::Explicit, (*text).to_owned())).collect()
+}
+
+#[test]
+fn rare_has_its_name_base_line_and_modifiers() {
+    let gloves = item("rare-gloves-death-nails");
+    assert_eq!((gloves.class.as_str(), gloves.name.as_str()), ("Gloves", "Death Nails"));
+
+    let (rarity, base_line, modifiers) = other("rare-gloves-death-nails");
+
+    assert_eq!((rarity.as_str(), base_line.as_str()), ("Rare", "Assassin's Mitts"));
+    let expected = ["+18 to Intelligence", "+73 to maximum Life", "+14% to Lightning Resistance", "0.23% of Physical Attack Damage Leeched as Mana"];
+    assert_eq!(modifiers, explicit(&expected));
+}
+
+#[test]
+fn modifiers_know_where_they_come_from() {
+    let (_, _, modifiers) = other("rare-belt-honour-leash");
+
+    let expected = [
+        (ModifierSource::Enchant, "Allocates As The Mountain"),
+        (ModifierSource::Implicit, "Can be Anointed"),
+        (ModifierSource::Fractured, "+33% to Chaos Resistance"),
+        (ModifierSource::Explicit, "+25 to Strength"),
+        (ModifierSource::Explicit, "+136 to maximum Life"),
+        (ModifierSource::Explicit, "+66 to maximum Mana"),
+        (ModifierSource::Explicit, "+56% to Fire Resistance"),
+        (ModifierSource::Crafted, "17% increased Damage"),
+    ];
+    assert_eq!(modifiers, expected.map(|(source, text)| (source, text.to_owned())));
+}
+
+#[test]
+fn advanced_text_drops_value_ranges_headers_and_reminders() {
+    let (_, base_line, modifiers) = other("rare-helmet-havoc-ward");
+
+    assert_eq!(base_line, "Vestigial Secutor Helm");
+    let mut expected = vec![(ModifierSource::Implicit, "Your Fire Damage can Shock but not Ignite".to_owned())];
+    expected.extend(explicit(&[
+        "23% increased Rarity of Items found",
+        "35% increased Armour and Evasion",
+        "31% increased Armour and Evasion",
+        "12% increased Stun and Block Recovery",
+        "23% increased Rarity of Items found",
+        "+231 to Accuracy Rating",
+        "+24% to Lightning Resistance",
+    ]));
+    assert_eq!(modifiers, expected);
+}
+
+#[test]
+fn advanced_text_keeps_fractured_and_implicit_headers_apart() {
+    let text = sample("rare-boots-invasion-track").replace(
+        "10% increased Movement Speed (fractured)\n+5 to maximum Life",
+        "{ Fractured Prefix Modifier \"Runner's\" (Tier: 7) — Speed }\n10(10-14)% increased Movement Speed\n{ Prefix Modifier \"Hale\" (Tier: 10) — Life }\n+5(3-9) to maximum Life",
+    );
+    let ItemKind::Other { modifiers, .. } = parse(&text).unwrap().kind else { panic!() };
+
+    assert_eq!((modifiers[0].source, modifiers[0].text.as_str()), (ModifierSource::Fractured, "10% increased Movement Speed"));
+    assert_eq!((modifiers[1].source, modifiers[1].text.as_str()), (ModifierSource::Explicit, "+5 to maximum Life"));
+}
+
+#[test]
+fn magic_and_normal_items_have_one_name_line() {
+    let (rarity, base_line, modifiers) = other("magic-frosted-vaal-axe");
+    assert_eq!((rarity.as_str(), base_line.as_str()), ("Magic", "Frosted Vaal Axe of Recuperation"));
+    let mut expected = vec![(ModifierSource::Implicit, "25% chance to Maim on Hit".to_owned())];
+    expected.extend(explicit(&["Adds 3 to 7 Cold Damage", "Grants 24 Life per Enemy Hit"]));
+    assert_eq!(modifiers, expected);
+
+    assert_eq!(other("normal-sorcerer-boots"), ("Normal".into(), "Sorcerer Boots".into(), vec![]));
+}
+
+#[test]
+fn unidentified_rare_shows_its_base_and_implicit_only() {
+    let (_, base_line, modifiers) = other("rare-mace-unidentified");
+
+    assert_eq!(base_line, "Ornate Mace");
+    assert_eq!(modifiers, [(ModifierSource::Implicit, "15% reduced Enemy Stun Threshold".to_owned())]);
 }
 
 #[test]

@@ -1,0 +1,20 @@
+Item Class: One Hand Axes
+Rarity: Magic
+Shadow Axe of the Boxer
+--------
+Two Handed Axe
+Physical Damage: 42-62
+Critical Strike Chance: 5.00%
+Attacks per Second: 1.25
+Weapon Range: 13
+--------
+Requirements:
+Level: 33
+Str: 80
+Dex: 37
+--------
+Sockets: R-R
+--------
+Item Level: 50
+--------
+11% reduced Enemy Stun Threshold

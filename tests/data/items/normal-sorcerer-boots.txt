@@ -1,0 +1,14 @@
+Item Class: Boots
+Rarity: Normal
+Sorcerer Boots
+--------
+Energy Shield: 54
+Memory Strands: 61
+--------
+Requirements:
+Level: 67
+Int: 123
+--------
+Sockets: B-B B 
+--------
+Item Level: 83

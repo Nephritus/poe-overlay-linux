@@ -1,6 +1,7 @@
 //! The Price Check Panel: what the item under the pointer is worth on
-//! poe.ninja. Opened by the `price-check` Action, on the half of the screen
-//! away from the pointer.
+//! poe.ninja, or a trade site search for items poe.ninja doesn't price.
+//! Opened by the `price-check` Action, on the half of the screen away from
+//! the pointer.
 
 use std::cell::{Cell, RefCell};
 use std::fmt::Write as _;
@@ -16,6 +17,7 @@ use crate::panel_prices::{PriceTable, Prices, ask};
 use crate::poe1::item::{self, Item, ItemKind};
 use crate::poe1::item_copy::CopyError;
 use crate::poe1::prices::ItemPrices;
+use crate::poe1::trade::{TradeData, TradeQuery};
 
 const WIDTH: i32 = 320;
 
@@ -29,6 +31,11 @@ pub struct PricePanel {
     title: gtk::Label,
     table: Rc<RefCell<PriceTable>>,
     status: gtk::Label,
+    /// The trade site search, for items poe.ninja doesn't price.
+    search: gtk::Box,
+    /// Modifiers the search leaves out.
+    excluded: gtk::Label,
+    url: Rc<RefCell<String>>,
     /// Where the Panel goes on the left half (where it was added).
     left: (f64, f64),
     /// The copied text the Panel shows, to tell a second press on the same
@@ -58,21 +65,33 @@ impl PricePanel {
         header.append(&close);
         let table = PriceTable::new();
         let status = gtk::Label::builder().xalign(0.0).wrap(true).max_width_chars(1).build();
+        let excluded = gtk::Label::builder().xalign(0.0).wrap(true).max_width_chars(1).build();
+        excluded.add_css_class("panel-status");
+        let open = gtk::Button::builder().label("Open on trade site").focusable(false).focus_on_click(false).halign(gtk::Align::Start).build();
+        let search = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        search.append(&open);
+        search.append(&excluded);
         root.append(&header);
         root.append(table.widget());
         root.append(&status);
+        root.append(&search);
         let table = Rc::new(RefCell::new(table));
-        Self { root, title, table, status, left, text: Rc::default(), check: Rc::default() }
+        let panel = Self { root, title, table, status, search, excluded, url: Rc::default(), left, text: Rc::default(), check: Rc::default() };
+        let opener = panel.clone();
+        open.connect_clicked(move |_| opener.open_search());
+        panel
     }
 
     pub fn widget(&self) -> &gtk::Box {
         &self.root
     }
 
-    /// Shows `title` over an empty table.
+    /// Shows `title` alone: no prices or search yet.
     fn start(&self, title: &str) {
         self.title.set_label(title);
         self.table.borrow_mut().clear();
+        self.table.borrow().widget().set_visible(false);
+        self.search.set_visible(false);
     }
 
     fn show_error(&self, title: &str, message: &str) {
@@ -83,6 +102,7 @@ impl PricePanel {
     fn show_prices(&self, item: &Item, prices: &ItemPrices) {
         self.start(&item.name);
         let mut table = self.table.borrow_mut();
+        table.widget().set_visible(true);
         let mut name = String::new();
         for price in &prices.prices {
             name.clear();
@@ -104,9 +124,29 @@ impl PricePanel {
         self.set_status(&format!("{note}poe.ninja · {}", prices.league), false);
     }
 
+    /// For items poe.ninja doesn't price: the button to the trade site
+    /// search at `url`, and the modifiers it leaves out.
+    fn show_search(&self, url: &str, excluded: &[String]) {
+        self.url.replace(url.to_owned());
+        self.search.set_visible(true);
+        self.excluded.set_visible(!excluded.is_empty());
+        self.excluded.set_label(&format!("Not searched (the trade site has no such stat):\n{}", excluded.join("\n")));
+        self.set_status("poe.ninja doesn't price this item: search the trade site for ones like it.", false);
+    }
+
     fn set_status(&self, text: &str, error: bool) {
         self.status.set_label(text);
         self.status.set_css_classes(&[if error { "panel-error" } else { "panel-status" }]);
+    }
+
+    /// Opens the trade site search in the player's browser.
+    fn open_search(&self) {
+        let panel = self.clone();
+        gtk::UriLauncher::new(&self.url.borrow()).launch(None::<&gtk::Window>, gtk::gio::Cancellable::NONE, move |opened| {
+            if let Err(err) = opened {
+                panel.set_status(&format!("Couldn't open the browser: {err}"), true);
+            }
+        });
     }
 }
 
@@ -153,12 +193,29 @@ pub async fn price_check(copier: ItemCopier, overlay: OverlaySurface, panel: Pri
         }
     };
     panel.start(&item.name);
-    panel.set_status("Checking poe.ninja…", false);
+    let searched = matches!(item.kind, ItemKind::Other { .. });
+    panel.set_status(if searched { "Building a trade site search…" } else { "Checking poe.ninja…" }, false);
     if !overlay.show(panel.widget()) {
         return;
     }
     let item = Arc::new(item);
     let lookup = item.clone();
+    if searched {
+        // The trade data is read on first use; the league may need poe.ninja.
+        let search = ask(&prices, move |source| {
+            let league = source.league(Instant::now())?;
+            let query = TradeQuery::new(&lookup, TradeData::bundled()).expect("an item searched on the trade site");
+            Ok((query.site_url(&league), query.excluded))
+        })
+        .await;
+        if panel.check.get() == check {
+            match search {
+                Ok((url, excluded)) => panel.show_search(&url, &excluded),
+                Err(message) => panel.show_error(&item.name, &message),
+            }
+        }
+        return;
+    }
     let result = ask(&prices, move |source| source.item_prices(&lookup, Instant::now())).await;
     if panel.check.get() != check {
         return;

@@ -213,7 +213,7 @@ impl<F: Fetch> PriceSource<F> {
 
     /// What `item` is worth: uniques, currency, gems and divination cards.
     pub fn item_prices(&mut self, item: &Item, now: Instant) -> Result<ItemPrices, String> {
-        if let ItemKind::Other { rarity } = &item.kind {
+        if let ItemKind::Other { rarity, .. } = &item.kind {
             return Err(format!(
                 "Price Check prices uniques, currency, gems and divination cards from poe.ninja; this is a {} item.",
                 rarity.to_lowercase()
@@ -344,7 +344,8 @@ impl<F: Fetch> PriceSource<F> {
         result
     }
 
-    fn league(&mut self, now: Instant) -> Result<Arc<str>, String> {
+    /// The league prices are in: the configured one, or poe.ninja's first.
+    pub fn league(&mut self, now: Instant) -> Result<Arc<str>, String> {
         if let Some(league) = &self.league {
             return Ok(league.clone());
         }
@@ -519,8 +520,8 @@ fn parse_exchange(body: &str, league: &str, category: &str, configured: bool) ->
     Ok(Exchange { divine_per_chaos, chaos, top })
 }
 
-/// Percent-encodes a league name for a query string.
-fn encode(text: &str) -> String {
+/// Percent-encodes text for a URL path or query (all but unreserved bytes).
+pub(crate) fn encode(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for byte in text.bytes() {
         match byte {

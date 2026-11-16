@@ -1,0 +1,17 @@
+Item Class: Boots
+Rarity: Rare
+Invasion Track
+Iron Greaves
+--------
+Armour: 6
+--------
+Sockets: B B
+--------
+Item Level: 2
+--------
+10% increased Movement Speed (fractured)
++5 to maximum Life
+Regenerate 1.9 Life per second
++8% to Cold Resistance
+--------
+Fractured Item

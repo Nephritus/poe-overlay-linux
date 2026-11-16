@@ -1,0 +1,21 @@
+Item Class: Gloves
+Rarity: Rare
+Death Nails
+Assassin's Mitts
+--------
+Evasion Rating: 104
+Energy Shield: 20
+--------
+Requirements:
+Level: 58
+Dex: 45
+Int: 45
+--------
+Sockets: G
+--------
+Item Level: 61
+--------
++18 to Intelligence
++73 to maximum Life
++14% to Lightning Resistance
+0.23% of Physical Attack Damage Leeched as Mana

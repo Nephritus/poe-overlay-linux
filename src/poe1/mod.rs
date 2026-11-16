@@ -5,6 +5,7 @@ pub mod item;
 pub mod item_copy;
 pub mod leveling;
 pub mod prices;
+pub mod trade;
 pub mod route;
 
 /// Game executables of the Steam and standalone clients.

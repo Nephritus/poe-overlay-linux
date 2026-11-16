@@ -32,8 +32,32 @@ pub enum ItemKind {
     Unique { links: u32 },
     /// Its name isn't shown until identified, only `Item::name`, the base.
     UnidentifiedUnique,
-    /// Anything else (rare, magic and normal equipment, maps…).
-    Other { rarity: String },
+    /// Anything else: rare, magic and normal equipment, jewels, flasks,
+    /// maps…, priced by searching the trade site.
+    Other {
+        rarity: String,
+        /// The line naming the base: a rare's second name line; the only
+        /// one of a magic or normal item (with its affixes) or an
+        /// unidentified rare.
+        base_line: String,
+        modifiers: Vec<Modifier>,
+    },
+}
+
+/// One modifier line, without its value ranges or source mark.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Modifier {
+    pub source: ModifierSource,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModifierSource {
+    Implicit,
+    Explicit,
+    Crafted,
+    Fractured,
+    Enchant,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -65,7 +89,9 @@ pub fn parse(text: &str) -> Result<Item, ItemTextError> {
     };
     let rarity = header.next().and_then(|line| line.strip_prefix("Rarity: ")).ok_or(ItemTextError::NotAnItem)?;
     let name = header.next().ok_or(ItemTextError::NotAnItem)?;
-    let identified = header.next().is_some();
+    // A rare's base, or an identified unique's.
+    let second_line = header.next();
+    let identified = second_line.is_some();
     let sections: Vec<Vec<&str>> = sections.map(Iterator::collect).collect();
     let lines = || sections.iter().flatten().copied();
     let value = |label: &str| lines().find_map(|line| line.strip_prefix(label));
@@ -93,9 +119,89 @@ pub fn parse(text: &str) -> Result<Item, ItemTextError> {
         ("Unique", _) => ItemKind::UnidentifiedUnique,
         // Fragments and scarabs are normal items that stack.
         ("Normal", Some(stack)) => ItemKind::Currency { stack },
-        (rarity, _) => ItemKind::Other { rarity: rarity.to_owned() },
+        (rarity, _) => ItemKind::Other {
+            rarity: rarity.to_owned(),
+            base_line: second_line.unwrap_or(name.as_str()).to_owned(),
+            modifiers: modifiers(&sections),
+        },
     };
     Ok(Item { class: class.to_owned(), name, kind })
+}
+
+/// The modifier lines of the sections after `Item Level`, in order: plain
+/// (`+24% to Lightning Resistance (crafted)`) or advanced text, where a
+/// `{ … Modifier … }` header names the source and values show their range
+/// (`+24(24-29)% to Lightning Resistance`).
+fn modifiers(sections: &[Vec<&str>]) -> Vec<Modifier> {
+    let Some(item_level) = sections.iter().position(|section| section.iter().any(|line| line.starts_with("Item Level: "))) else {
+        return Vec::new();
+    };
+    let mut modifiers = Vec::new();
+    for section in sections[item_level + 1..].iter().filter(|section| !section.iter().all(|line| is_marker(line))) {
+        let mut source = ModifierSource::Explicit;
+        for line in section {
+            if let Some(header) = line.strip_prefix('{') {
+                source = header_source(header);
+            } else if !(line.starts_with('(') && line.ends_with(')')) {
+                let (text, marked) = SUFFIXES
+                    .iter()
+                    .find_map(|(suffix, source)| Some((line.strip_suffix(suffix)?, *source)))
+                    .map_or((*line, None), |(text, source)| (text, Some(source)));
+                modifiers.push(Modifier { source: marked.unwrap_or(source), text: without_ranges(text) });
+            }
+        }
+    }
+    modifiers
+}
+
+const SUFFIXES: [(&str, ModifierSource); 4] = [
+    (" (implicit)", ModifierSource::Implicit),
+    (" (crafted)", ModifierSource::Crafted),
+    (" (fractured)", ModifierSource::Fractured),
+    (" (enchant)", ModifierSource::Enchant),
+];
+
+/// Lines that say something about the item rather than being a modifier.
+fn is_marker(line: &str) -> bool {
+    matches!(line, "Corrupted" | "Mirrored" | "Split" | "Unidentified" | "Unmodifiable")
+        || line.ends_with(" Item")
+        || ["Note: ", "Right click", "Place into", "Travel to this Map"].iter().any(|start| line.starts_with(start))
+}
+
+/// `Fractured Prefix Modifier "Runner's" (Tier: 7) — Speed }` → fractured.
+fn header_source(header: &str) -> ModifierSource {
+    let kind = header.split(['"', '—', '(']).next().unwrap_or_default();
+    if kind.contains("Implicit") {
+        ModifierSource::Implicit
+    } else if kind.contains("Crafted") {
+        ModifierSource::Crafted
+    } else if kind.contains("Fractured") {
+        ModifierSource::Fractured
+    } else if kind.contains("Enchant") {
+        ModifierSource::Enchant
+    } else {
+        ModifierSource::Explicit
+    }
+}
+
+/// `Adds 10(9-12) to 16(14-19) Physical Damage` → `Adds 10 to 16 Physical Damage`.
+fn without_ranges(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find('(') {
+        let range = rest[open + 1..].split_once(')').map(|(inside, _)| inside);
+        let is_range = range.is_some_and(|inside| !inside.is_empty() && inside.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+')));
+        out.push_str(&rest[..open]);
+        match range {
+            Some(inside) if is_range => rest = &rest[open + inside.len() + 2..],
+            _ => {
+                out.push('(');
+                rest = &rest[open + 1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// `Knockback` from `Supported by Level 1 Knockback`.
