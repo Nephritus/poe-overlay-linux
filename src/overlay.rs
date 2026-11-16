@@ -122,7 +122,8 @@ fn activate(
     // The Toggled Panels take turns in one spot next to the Route Panel.
     let currency_panel = CurrencyPanel::new();
     overlay.add_panel(currency_panel.widget(), TOGGLED_PANEL_X, TOGGLED_PANEL_Y, PanelKind::Toggled);
-    let price_panel = PricePanel::new((TOGGLED_PANEL_X, TOGGLED_PANEL_Y));
+    let trades: Trades = Arc::new(Mutex::new(TradeSource::new(TradeSite::new())));
+    let price_panel = PricePanel::new((TOGGLED_PANEL_X, TOGGLED_PANEL_Y), trades);
     overlay.add_panel(price_panel.widget(), TOGGLED_PANEL_X, TOGGLED_PANEL_Y, PanelKind::Toggled);
     let held = config.hotkeys.get(Action::PriceCheck).map(|hotkey| hotkey.modifiers().collect()).unwrap_or_default();
     let copier = ItemCopier::spawn(key_code_of_c(), held);
@@ -314,7 +315,6 @@ fn take_actions(
     copier: ItemCopier,
     prices: Prices,
 ) {
-    let trades: Trades = Arc::new(Mutex::new(TradeSource::new(TradeSite::new())));
     glib::spawn_future_local(async move {
         while let Ok(action) = actions.recv().await {
             // Not awaited here: a slow copy or fetch mustn't hold up the next Action.
@@ -325,7 +325,7 @@ fn take_actions(
                     }
                 }
                 Action::PriceCheck => {
-                    let check = price_panel::price_check(copier.clone(), overlay.clone(), price.clone(), prices.clone(), trades.clone());
+                    let check = price_panel::price_check(copier.clone(), overlay.clone(), price.clone(), prices.clone());
                     glib::spawn_future_local(check);
                 }
                 Action::Settings => open_settings(),

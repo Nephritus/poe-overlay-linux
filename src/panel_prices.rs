@@ -48,9 +48,7 @@ impl PriceTable {
 
     /// Empties the table, leaving the header.
     pub fn clear(&mut self) {
-        while let Some(child) = self.grid.first_child() {
-            self.grid.remove(&child);
-        }
+        clear(&self.grid);
         self.rows = 0;
         self.attach("", "chaos", "divine", "panel-head");
     }
@@ -82,4 +80,11 @@ fn format_price(value: f64) -> String {
     }
     let decimals = (2 - value.log10().floor() as i32).clamp(0, 6) as usize;
     format!("{value:.decimals$}")
+}
+
+/// Removes every child of `grid`.
+pub fn clear(grid: &gtk::Grid) {
+    while let Some(child) = grid.first_child() {
+        grid.remove(&child);
+    }
 }

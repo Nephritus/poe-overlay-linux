@@ -168,6 +168,27 @@ fn stat_on_two_lines_is_matched_whole() {
 }
 
 #[test]
+fn filters_carry_the_trade_site_wording() {
+    let text = sample("rare-gloves-death-nails").replace(
+        "+18 to Intelligence",
+        "Grants Immunity to Bleeding for 4 seconds if used while Bleeding\nGrants Immunity to Corrupted Blood for 4 seconds if used while affected by Corrupted Blood",
+    );
+
+    let gloves = query(&parse(&text).unwrap());
+
+    let wording: Vec<&str> = gloves.filters.iter().map(|filter| filter.text).collect();
+    assert_eq!(
+        wording,
+        [
+            "+# total maximum Life",
+            "+#% total Elemental Resistance",
+            "Grants Immunity to Bleeding for 4 seconds if used while Bleeding\nGrants Immunity to Corrupted Blood for 4 seconds if used while affected by Corrupted Blood",
+            "#% of Physical Attack Damage Leeched as Mana",
+        ]
+    );
+}
+
+#[test]
 fn numbers_in_a_stat_wording_tell_stats_apart() {
     for (seconds, id) in [("4", "explicit.stat_3023957681"), ("10", "explicit.stat_2453026567")] {
         let line = format!("20% chance to gain Onslaught for {seconds} seconds on Kill");
@@ -237,28 +258,17 @@ fn search_asks_for_cheapest_online_non_unique_listings() {
 }
 
 #[test]
-fn trade_site_link_carries_the_league_and_search() {
-    let gloves = query(&item("rare-gloves-death-nails"));
+fn switched_off_filters_are_left_out_of_the_search() {
+    let mut gloves = query(&item("rare-gloves-death-nails"));
+    gloves.filters[0].enabled = false;
+    gloves.filters[2].enabled = false;
 
-    let url = gloves.site_url("Hardcore Covens");
+    let json: serde_json::Value = serde_json::from_str(&gloves.to_json()).unwrap();
 
-    let search = url.strip_prefix("https://www.pathofexile.com/trade/search/Hardcore%20Covens?q=").expect(&url);
-    assert!(!search.contains([' ', '"', '{', '\'']), "{search}");
-    assert_eq!(percent_decode(search), gloves.to_json());
+    let searched = serde_json::json!([
+        { "id": "pseudo.pseudo_total_elemental_resistance", "value": { "min": 12.0 } },
+        { "id": "explicit.stat_3237948413", "value": { "min": 0.2 } },
+    ]);
+    assert_eq!(json["query"]["stats"][0]["filters"], searched);
 }
 
-fn percent_decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' {
-            out.push(u8::from_str_radix(&text[i + 1..i + 3], 16).unwrap());
-            i += 3;
-        } else {
-            out.push(bytes[i]);
-            i += 1;
-        }
-    }
-    String::from_utf8(out).unwrap()
-}

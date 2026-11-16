@@ -5,11 +5,11 @@
 //! Stat ids and base types come from a snapshot of the trade site's data
 //! (`data/trade`, refreshed by `data/trade/update.sh`).
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use super::item::{Item, ItemKind, ModifierSource};
-use super::prices::encode;
 
 /// Where the trade site is; its API is under `/api/trade`.
 pub(crate) const TRADE_SITE: &str = "https://www.pathofexile.com";
@@ -29,6 +29,8 @@ struct Stat {
     /// The numbers in the stat's text: `None` for a value (`#`), else part
     /// of the wording (`a 8 second Cooldown`).
     numbers: Vec<Option<f64>>,
+    /// As the trade site words it.
+    text: Cow<'static, str>,
 }
 
 impl Stat {
@@ -50,8 +52,9 @@ impl TradeData {
     fn read(stats_tsv: &'static str, bases: &'static str) -> TradeData {
         let (mut stats, mut local) = (HashMap::<String, Vec<Stat>>::new(), HashMap::<String, Vec<Stat>>::new());
         for (id, text) in stats_tsv.lines().filter_map(|line| line.split_once('\t')) {
-            let (key, numbers) = numbers(&text.replace("\\n", "\n"));
-            let stat = Stat { id, numbers: numbers.iter().map(|number| number.map(|number| number.value)).collect() };
+            let text = if text.contains("\\n") { Cow::Owned(text.replace("\\n", "\n")) } else { Cow::Borrowed(text) };
+            let (key, numbers) = numbers(&text);
+            let stat = Stat { id, numbers: numbers.iter().map(|number| number.map(|number| number.value)).collect(), text };
             match key.strip_suffix(" (Local)") {
                 Some(key) => local.entry(key.to_owned()).or_default().push(stat),
                 None => stats.entry(key).or_default().push(stat),
@@ -141,15 +144,24 @@ pub struct TradeQuery<'d> {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StatFilter<'d> {
     pub id: &'d str,
+    /// The trade site's wording, each value written `#`.
+    pub text: &'d str,
     /// `None`: the stat at any value.
     pub min: Option<f64>,
+    /// Whether the search uses it; the player can switch it off.
+    pub enabled: bool,
 }
 
-// Pseudo stats: totals over every modifier, as the trade site counts them.
-const TOTAL_LIFE: &str = "pseudo.pseudo_total_life";
-const TOTAL_ELEMENTAL_RESISTANCE: &str = "pseudo.pseudo_total_elemental_resistance";
-const TOTAL_CHAOS_RESISTANCE: &str = "pseudo.pseudo_total_chaos_resistance";
-const TOTAL_ATTRIBUTES: [&str; 3] = ["pseudo.pseudo_total_strength", "pseudo.pseudo_total_dexterity", "pseudo.pseudo_total_intelligence"];
+// Pseudo stats (id, wording): totals over every modifier, as the trade site
+// counts them.
+const TOTAL_LIFE: (&str, &str) = ("pseudo.pseudo_total_life", "+# total maximum Life");
+const TOTAL_ELEMENTAL_RESISTANCE: (&str, &str) = ("pseudo.pseudo_total_elemental_resistance", "+#% total Elemental Resistance");
+const TOTAL_CHAOS_RESISTANCE: (&str, &str) = ("pseudo.pseudo_total_chaos_resistance", "+#% total to Chaos Resistance");
+const TOTAL_ATTRIBUTES: [(&str, &str); 3] = [
+    ("pseudo.pseudo_total_strength", "+# total to Strength"),
+    ("pseudo.pseudo_total_dexterity", "+# total to Dexterity"),
+    ("pseudo.pseudo_total_intelligence", "+# total to Intelligence"),
+];
 
 const LIFE: &str = "+# to maximum Life";
 
@@ -215,7 +227,7 @@ impl<'d> TradeQuery<'d> {
         let mut life: Option<Value> = None;
         let (mut elemental, mut chaos) = (Value::default(), Value::default());
         let mut attributes = [Value::default(); 3];
-        let mut stats: Vec<(&'d str, Value)> = Vec::new();
+        let mut stats: Vec<(&'d Stat, Value)> = Vec::new();
         let (mut excluded, mut skipped) = (Vec::new(), Vec::new());
         let mut rest = modifiers.iter().peekable();
         while let Some(modifier) = rest.next() {
@@ -223,8 +235,8 @@ impl<'d> TradeQuery<'d> {
             // Some stats span two lines.
             if searched && let Some(next) = rest.peek().filter(|next| next.source == modifier.source) {
                 let (key, numbers) = numbers(&format!("{}\n{}", modifier.text, next.text));
-                if let Some((id, value)) = stat_value(data, &key, &numbers, locality) {
-                    add_stat(&mut stats, id, value);
+                if let Some((stat, value)) = stat_value(data, &key, &numbers, locality) {
+                    add_stat(&mut stats, stat, value);
                     rest.next();
                     continue;
                 }
@@ -248,7 +260,7 @@ impl<'d> TradeQuery<'d> {
                 skipped.push(modifier.text.clone());
             } else {
                 match stat_value(data, &key, &numbers, locality) {
-                    Some((id, value)) => add_stat(&mut stats, id, value),
+                    Some((stat, value)) => add_stat(&mut stats, stat, value),
                     None => excluded.push(modifier.text.clone()),
                 }
             }
@@ -260,17 +272,19 @@ impl<'d> TradeQuery<'d> {
         let mut filters = Vec::with_capacity(stats.len() + 6);
         let pseudo = [(TOTAL_LIFE, life.unwrap_or_default()), (TOTAL_ELEMENTAL_RESISTANCE, elemental), (TOTAL_CHAOS_RESISTANCE, chaos)];
         let totals = pseudo.into_iter().chain(TOTAL_ATTRIBUTES.into_iter().zip(attributes));
-        filters.extend(totals.filter(|(_, total)| total.value > 0.0).map(|(id, total)| StatFilter { id, min: total.minimum() }));
-        filters.extend(stats.into_iter().map(|(id, total)| StatFilter { id, min: total.minimum() }));
+        let filter = |(id, text), total: Value| StatFilter { id, text, min: total.minimum(), enabled: true };
+        filters.extend(totals.filter(|(_, total)| total.value > 0.0).map(|(stat, total)| filter(stat, total)));
+        filters.extend(stats.into_iter().map(|(stat, total)| filter((stat.id, &stat.text), total)));
         Some(TradeQuery { base_type: data.base_type(base_line), filters, excluded, skipped })
     }
 
-    /// The search as the trade site's API and search page take it: online
-    /// sellers, any non-unique rarity, cheapest first.
+    /// The search as the trade site's API takes it: online sellers, any
+    /// non-unique rarity, cheapest first; switched-off filters left out.
     pub fn to_json(&self) -> String {
         let filters: Vec<serde_json::Value> = self
             .filters
             .iter()
+            .filter(|filter| filter.enabled)
             .map(|filter| match filter.min {
                 Some(min) => serde_json::json!({ "id": filter.id, "value": { "min": min } }),
                 None => serde_json::json!({ "id": filter.id }),
@@ -286,18 +300,13 @@ impl<'d> TradeQuery<'d> {
         }
         serde_json::json!({ "query": query, "sort": { "price": "asc" } }).to_string()
     }
-
-    /// The trade site's search page with this search filled in.
-    pub fn site_url(&self, league: &str) -> String {
-        format!("{TRADE_SITE}/trade/search/{}?q={}", encode(league), encode(&self.to_json()))
-    }
 }
 
 /// Adds `value` to the stat's total, the same stat on two modifiers summed.
-fn add_stat<'d>(stats: &mut Vec<(&'d str, Value)>, id: &'d str, value: Value) {
-    match stats.iter_mut().find(|(known, _)| *known == id) {
+fn add_stat<'d>(stats: &mut Vec<(&'d Stat, Value)>, stat: &'d Stat, value: Value) {
+    match stats.iter_mut().find(|(known, _)| known.id == stat.id) {
         Some((_, total)) => total.add(value),
-        None => stats.push((id, value)),
+        None => stats.push((stat, value)),
     }
 }
 
@@ -339,7 +348,7 @@ fn numbers(text: &str) -> (String, Vec<Option<Value>>) {
 /// range like `Adds 3 to 7`, or 0 for a stat without values. `reduced` and
 /// `less` are searched as negative `increased` and `more` when the trade
 /// site only has those.
-fn stat_value<'d>(data: &'d TradeData, key: &str, numbers: &[Option<Value>], locality: Locality) -> Option<(&'d str, Value)> {
+fn stat_value<'d>(data: &'d TradeData, key: &str, numbers: &[Option<Value>], locality: Locality) -> Option<(&'d Stat, Value)> {
     let (stat, sign) = match data.stat(key, numbers, locality) {
         Some(stat) => (stat, 1.0),
         None => {
@@ -350,5 +359,5 @@ fn stat_value<'d>(data: &'d TradeData, key: &str, numbers: &[Option<Value>], loc
     let values = stat.numbers.iter().zip(numbers).filter(|(wording, _)| wording.is_none()).filter_map(|(_, number)| *number);
     let (sum, count, decimals) = values.fold((0.0, 0u32, 0), |(sum, count, decimals), number| (sum + number.value, count + 1, decimals.max(number.decimals)));
     let value = if count == 0 { 0.0 } else { sign * sum / f64::from(count) };
-    Some((stat.id, Value { value, decimals }))
+    Some((stat, Value { value, decimals }))
 }

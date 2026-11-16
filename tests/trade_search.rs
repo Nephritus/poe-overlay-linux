@@ -128,6 +128,22 @@ fn same_search_within_five_minutes_is_answered_from_the_last_one() {
 }
 
 #[test]
+fn edited_search_is_sent_instead_of_answered_from_the_last_one() {
+    let trade = FakeTrade::new(search_ok(SEARCH));
+    let mut source = TradeSource::new(&trade);
+    let start = Instant::now();
+    let mut query = gloves();
+    source.listings(&query, "Covens", start).unwrap();
+
+    query.filters[0].enabled = false;
+    source.listings(&query, "Covens", start + Duration::from_secs(10)).unwrap();
+
+    assert_eq!(trade.sent(), 4);
+    let body = trade.requests.borrow()[2].1.clone().unwrap();
+    assert!(body.contains("pseudo_total_elemental_resistance") && !body.contains("pseudo_total_life"), "{body}");
+}
+
+#[test]
 fn rate_limited_search_waits_without_sending_and_says_how_long() {
     let headers = [("X-Rate-Limit-Rules", "Ip"), ("X-Rate-Limit-Ip", "5:10:60"), ("X-Rate-Limit-Ip-State", "6:10:60"), ("Retry-After", "60")];
     let trade = FakeTrade::new(response(429, &headers, r#"{"error":{"code":3,"message":"Rate limit exceeded"}}"#));
