@@ -31,6 +31,8 @@ window.poe-overlay { background: transparent; }
 .panel-typing { font-size: smaller; color: rgb(230, 190, 110); }
 .panel-bound { min-height: 0; min-width: 0; padding: 0 4px; }
 .panel-bound.error { color: rgb(230, 120, 100); }
+.panel-choice { min-height: 0; min-width: 0; padding: 1px 8px; font-size: smaller; }
+.panel-choice:checked { background: rgb(204, 153, 51); color: rgb(20, 20, 30); }
 ";
 
 /// How long a Panel stays shown.

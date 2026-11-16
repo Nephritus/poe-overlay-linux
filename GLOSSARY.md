@@ -71,5 +71,5 @@ One line of an item's properties that rolls (`+73 to maximum Life`), by source: 
 _Avoid_: Affix (only explicit prefixes and suffixes), stat (the trade site's id for a modifier's text)
 
 **Listing**:
-An item put up for sale on the trade site, with its price, when it was listed and its seller; Price Check shows the cheapest of those like the checked item.
-_Avoid_: Offer (reserved for trade), post, ad
+An item put up for sale on the trade site, with its price, when it was listed and its seller; Price Check shows the cheapest of those like the checked item. Two kinds: **instant buyout** (in a Merchant's Tab; the buyer travels to the seller's hideout and buys it, seller online or not) and **in person** (the buyer whispers a seller who is online).
+_Avoid_: Offer (reserved for trade), post, ad, async (the game's name for instant buyout trading)

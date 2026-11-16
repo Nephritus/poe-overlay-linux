@@ -18,7 +18,7 @@ use crate::panel_prices::{PriceTable, Prices, Trades, ask, clear};
 use crate::poe1::item::{self, Item, ItemKind};
 use crate::poe1::item_copy::CopyError;
 use crate::poe1::prices::ItemPrices;
-use crate::poe1::trade::{NotANumber, TradeData, TradeQuery, bound};
+use crate::poe1::trade::{ListingKind, NotANumber, TradeData, TradeQuery, bound};
 use crate::poe1::trade_search::{Listings, TradeError, age};
 
 const WIDTH: i32 = 320;
@@ -53,6 +53,8 @@ pub struct PricePanel {
     status: gtk::Label,
     /// The trade site search, for items poe.ninja doesn't price.
     search: gtk::Grid,
+    /// The sale type searched: linked toggle buttons, as in [`SALES`].
+    sale: gtk::Box,
     /// One row per stat searched: a checkbox with its wording, its minimum
     /// and maximum.
     filters: gtk::Grid,
@@ -108,6 +110,14 @@ impl PricePanel {
         left_out.add_css_class("panel-status");
         let criteria = gtk::Box::new(gtk::Orientation::Vertical, 6);
         criteria.set_size_request(CRITERIA_WIDTH, -1);
+        let options = gtk::Grid::builder().column_spacing(8).row_spacing(4).build();
+        let sale = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        sale.add_css_class("linked");
+        let sale_label = gtk::Label::builder().label("Sale").xalign(0.0).build();
+        sale_label.add_css_class("panel-status");
+        options.attach(&sale_label, 0, 0, 1, 1);
+        options.attach(&sale, 1, 0, 1, 1);
+        criteria.append(&options);
         criteria.append(&filters);
         criteria.append(&search_button);
         criteria.append(&typing);
@@ -135,6 +145,7 @@ impl PricePanel {
             table,
             status,
             search,
+            sale: sale.clone(),
             filters,
             rows: Rc::default(),
             search_button: search_button.clone(),
@@ -252,6 +263,8 @@ impl PricePanel {
         self.shown.take();
         self.status.set_visible(false);
         self.search.set_visible(true);
+        let sale = SALES.iter().position(|(_, kind)| *kind == query.sale).unwrap_or(0);
+        fill_choice(&self.sale, SALES.iter().map(|(label, _)| *label), sale);
         clear(&self.filters);
         let mut rows = self.rows.borrow_mut();
         rows.clear();
@@ -319,6 +332,7 @@ impl PricePanel {
         let Some(shown) = search.as_mut() else { return };
         let rows = self.rows.borrow();
         let mut typed_wrong = false;
+        shown.query.sale = SALES[chosen(&self.sale)].1;
         for (filter, row) in shown.query.filters.iter_mut().zip(rows.iter()) {
             filter.enabled = row.checkbox.is_active();
             for (entry, side) in [(&row.min, &mut filter.min), (&row.max, &mut filter.max)] {
@@ -345,15 +359,20 @@ impl PricePanel {
         self.presses.load(Ordering::Relaxed) == check
     }
 
-    /// The cheapest listings: price, how long ago it was listed, and whether
-    /// the seller is away.
+    /// The cheapest listings: price, how long ago it was listed, and how it is
+    /// bought (or that the seller is away).
     fn show_listings(&self, found: &Listings) {
         clear(&self.listings);
         let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_secs() as i64);
         for (row, listing) in (0..).zip(&found.cheapest) {
             let price = listing.price.as_ref().map_or_else(|| "no price".to_owned(), |(amount, currency)| format!("{amount} {currency}"));
             let listed = listing.listed.map(|listed| age(now - listed)).unwrap_or_default();
-            let cells = [(price, "panel-name", 0.0), (listed, "panel-status", 1.0), ((if listing.afk { "AFK" } else { "" }).to_owned(), "panel-status", 0.0)];
+            let sale = match listing.kind {
+                ListingKind::InstantBuyout => "instant",
+                ListingKind::InPerson if listing.afk => "AFK",
+                ListingKind::InPerson => "in person",
+            };
+            let cells = [(price, "panel-name", 0.0), (listed, "panel-status", 1.0), (sale.to_owned(), "panel-status", 0.0)];
             for (column, (text, class, xalign)) in (0..).zip(cells) {
                 let cell = gtk::Label::builder().label(&text).xalign(xalign).build();
                 cell.add_css_class(class);
@@ -362,8 +381,8 @@ impl PricePanel {
         }
         self.listings.set_visible(!found.cheapest.is_empty());
         let status = match found.total {
-            0 => "No online listings like it: switch off some stats and search again.".to_owned(),
-            total => format!("Trade site · {total} listed online, cheapest first"),
+            0 => "No listings like it: switch off some stats and search again.".to_owned(),
+            total => format!("Trade site · {total} listed, cheapest first"),
         };
         self.set_found(&status, false);
     }
@@ -380,6 +399,39 @@ impl PricePanel {
 fn set_label(label: &gtk::Label, text: &str, error: bool) {
     label.set_label(text);
     label.set_css_classes(&[if error { "panel-error" } else { "panel-status" }]);
+}
+
+/// The sale types the player picks from, as the search takes them.
+const SALES: [(&str, Option<ListingKind>); 3] = [("Both", None), ("Instant buyout", Some(ListingKind::InstantBuyout)), ("In person", Some(ListingKind::InPerson))];
+
+/// Fills `choice` with linked toggle buttons, one per label, `selected` on;
+/// exactly one is on at a time. Pointer-only, like every Panel button.
+fn fill_choice<'a>(choice: &gtk::Box, labels: impl IntoIterator<Item = &'a str>, selected: usize) {
+    while let Some(child) = choice.first_child() {
+        choice.remove(&child);
+    }
+    let mut first: Option<gtk::ToggleButton> = None;
+    for (index, label) in labels.into_iter().enumerate() {
+        let button = gtk::ToggleButton::builder().label(label).active(index == selected).focusable(false).focus_on_click(false).build();
+        button.add_css_class("panel-choice");
+        button.set_group(first.as_ref());
+        first.get_or_insert(button.clone());
+        choice.append(&button);
+    }
+}
+
+/// Which of `choice`'s buttons is on.
+fn chosen(choice: &gtk::Box) -> usize {
+    let mut button = choice.first_child();
+    let mut index = 0;
+    while let Some(current) = button {
+        if current.downcast_ref::<gtk::ToggleButton>().is_some_and(gtk::ToggleButton::is_active) {
+            return index;
+        }
+        button = current.next_sibling();
+        index += 1;
+    }
+    0
 }
 
 /// One press of the Price Check hotkey. A press while the Panel is open

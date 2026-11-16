@@ -3,7 +3,7 @@
 //! rounded down; ids are the snapshot's.
 
 use poe_overlay::poe1::item::{Item, parse};
-use poe_overlay::poe1::trade::{TradeData, TradeQuery, bound};
+use poe_overlay::poe1::trade::{ListingKind, TradeData, TradeQuery, bound};
 
 fn sample(name: &str) -> String {
     std::fs::read_to_string(format!("{}/tests/data/items/{name}.txt", env!("CARGO_MANIFEST_DIR"))).unwrap()
@@ -235,14 +235,15 @@ fn items_poe_ninja_prices_are_not_searched() {
 }
 
 #[test]
-fn search_asks_for_cheapest_online_non_unique_listings() {
+fn first_search_asks_for_cheapest_non_unique_listings_of_both_kinds() {
     let gloves = query(&item("rare-gloves-death-nails"));
 
     let json: serde_json::Value = serde_json::from_str(&gloves.to_json()).unwrap();
 
+    // `available`: instant buyout, and in person from sellers online now.
     let expected = serde_json::json!({
         "query": {
-            "status": { "option": "online" },
+            "status": { "option": "available" },
             "type": "Assassin's Mitts",
             "stats": [{ "type": "and", "filters": [
                 { "id": "pseudo.pseudo_total_life", "value": { "min": 65.0 } },
@@ -255,6 +256,18 @@ fn search_asks_for_cheapest_online_non_unique_listings() {
         "sort": { "price": "asc" },
     });
     assert_eq!(json, expected);
+}
+
+#[test]
+fn sale_type_picks_instant_buyout_or_in_person_listings() {
+    let mut gloves = query(&item("rare-gloves-death-nails"));
+    let status = |gloves: &TradeQuery| serde_json::from_str::<serde_json::Value>(&gloves.to_json()).unwrap()["query"]["status"]["option"].clone();
+
+    gloves.sale = Some(ListingKind::InstantBuyout);
+    assert_eq!(status(&gloves), "securable");
+
+    gloves.sale = Some(ListingKind::InPerson);
+    assert_eq!(status(&gloves), "online");
 }
 
 #[test]

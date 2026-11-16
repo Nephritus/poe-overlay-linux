@@ -1,0 +1,205 @@
+{
+  "result": [
+    {
+      "id": "d8393514376db3b1913aca12235c8d14787585e4943f3447b50e0aec1e5da282",
+      "listing": {
+        "indexed": "2026-11-16T11:25:37Z",
+        "price": {
+          "type": "~b/o",
+          "amount": 1,
+          "currency": "alch"
+        },
+        "account": {
+          "name": "miiepupu#5556",
+          "online": null
+        },
+        "fee": 2188
+      },
+      "item": {
+        "name": "Ghoul Caress",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "0f1b270469194fd088bd03c7afebda3e8ac9d3ba1c701f7e00434a6adf79067b",
+      "listing": {
+        "indexed": "2026-11-15T01:52:56Z",
+        "price": {
+          "type": "~b/o",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "Luke_TuT#2645",
+          "online": null
+        },
+        "fee": 2650
+      },
+      "item": {
+        "name": "Storm Knuckle",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "99bfd4783395e786391e9bc1ff49e8da0ad11363ab937eff2913bc269973516b",
+      "listing": {
+        "indexed": "2026-11-15T03:32:14Z",
+        "price": {
+          "type": "~price",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "chud8#1614",
+          "online": {
+            "league": "Covens"
+          }
+        }
+      },
+      "item": {
+        "name": "Beast Paw",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "dabc32bd243145dc22065cf153d99823198e1612d09eb38f8b10d1cd37e9dcf8",
+      "listing": {
+        "indexed": "2026-11-14T19:22:51Z",
+        "price": {
+          "type": "~b/o",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "MonexXx#1937",
+          "online": null
+        },
+        "fee": 2209
+      },
+      "item": {
+        "name": "Vengeance Hold",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "9770d1c63c1363db4a1b528d88afb3f5bbff87ac5e1a66966a37954538da4d62",
+      "listing": {
+        "indexed": "2026-11-16T15:15:02Z",
+        "price": {
+          "type": "~b/o",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "jeks306#0363",
+          "online": null
+        },
+        "fee": 3271
+      },
+      "item": {
+        "name": "Sorrow Paw",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "b3f55fb4bca155df30e9c693600352efb552e915075c2ffca5d1babdd432bdcb",
+      "listing": {
+        "indexed": "2026-11-15T14:36:59Z",
+        "price": {
+          "type": "~b/o",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "FaCaIsLiSa#2636",
+          "online": null
+        },
+        "fee": 2684
+      },
+      "item": {
+        "name": "Sorrow Grip",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "a60905a667c9286406608f71bdce8e17a1ff2b12458bb405b0a5913bdc6bc2b1",
+      "listing": {
+        "indexed": "2026-11-14T23:08:01Z",
+        "price": {
+          "type": "~b/o",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "qazziq#3287",
+          "online": null
+        },
+        "fee": 1810
+      },
+      "item": {
+        "name": "Onslaught Mitts",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "adb66829ebe2c14e54901a5e29c343db5f017a96eba6a46299cc82668b6d26f6",
+      "listing": {
+        "indexed": "2026-11-16T11:28:55Z",
+        "price": {
+          "type": "~b/o",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "shibata10072#6034",
+          "online": null
+        },
+        "fee": 3046
+      },
+      "item": {
+        "name": "Morbid Hold",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "eba97a502fdac31edb5244d888e1fcd756acc92f9c8d9bd7ad0a872dd6d7e971",
+      "listing": {
+        "indexed": "2026-11-16T08:06:26Z",
+        "price": {
+          "type": "~b/o",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "SniffYo#0460",
+          "online": null
+        },
+        "fee": 1828
+      },
+      "item": {
+        "name": "Miracle Talons",
+        "typeLine": "Assassin's Mitts"
+      }
+    },
+    {
+      "id": "41e03ecd2b205e7ecc7fabb62d0b41d93ada67fd85a8b5fb972f7d2d576815a2",
+      "listing": {
+        "indexed": "2026-11-15T07:09:40Z",
+        "price": {
+          "type": "~b/o",
+          "amount": 1,
+          "currency": "chaos"
+        },
+        "account": {
+          "name": "Jade#0855",
+          "online": null
+        },
+        "fee": 1923
+      },
+      "item": {
+        "name": "Gloom Fist",
+        "typeLine": "Assassin's Mitts"
+      }
+    }
+  ]
+}

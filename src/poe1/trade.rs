@@ -139,6 +139,18 @@ pub struct TradeQuery<'d> {
     /// Implicit, crafted and enchant modifiers that aren't in a total: not
     /// searched by choice.
     pub skipped: Vec<String>,
+    /// Only Listings of this kind; `None`: both.
+    pub sale: Option<ListingKind>,
+}
+
+/// How a Listing is bought.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListingKind {
+    /// From a Merchant's Tab: the buyer travels to the seller's hideout,
+    /// seller online or not.
+    InstantBuyout,
+    /// From a seller online now, reached by whisper.
+    InPerson,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -290,10 +302,11 @@ impl<'d> TradeQuery<'d> {
         let filter = |(id, text), total: Value| StatFilter { id, text, min: total.minimum(), max: None, enabled: true };
         filters.extend(totals.filter(|(_, total)| total.value > 0.0).map(|(stat, total)| filter(stat, total)));
         filters.extend(stats.into_iter().map(|(stat, total)| filter((stat.id, &stat.text), total)));
-        Some(TradeQuery { base_type: data.base_type(base_line), filters, excluded, skipped })
+        Some(TradeQuery { base_type: data.base_type(base_line), filters, excluded, skipped, sale: None })
     }
 
-    /// The search as the trade site's API takes it: online sellers, any
+    /// The search as the trade site's API takes it: the sale type chosen
+    /// (instant buyout and in person from sellers online now by default), any
     /// non-unique rarity, cheapest first; switched-off filters left out.
     pub fn to_json(&self) -> String {
         let filters: Vec<serde_json::Value> = self
@@ -314,8 +327,13 @@ impl<'d> TradeQuery<'d> {
                 }
             })
             .collect();
+        let status = match self.sale {
+            None => "available",
+            Some(ListingKind::InstantBuyout) => "securable",
+            Some(ListingKind::InPerson) => "online",
+        };
         let mut query = serde_json::json!({
-            "status": { "option": "online" },
+            "status": { "option": status },
             "stats": [{ "type": "and", "filters": filters }],
             "filters": { "type_filters": { "filters": { "rarity": { "option": "nonunique" } } } },
         });

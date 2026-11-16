@@ -6,11 +6,12 @@ use std::cell::RefCell;
 use std::time::{Duration, Instant};
 
 use poe_overlay::poe1::item::parse;
-use poe_overlay::poe1::trade::{TradeData, TradeQuery};
+use poe_overlay::poe1::trade::{ListingKind, TradeData, TradeQuery};
 use poe_overlay::poe1::trade_search::{TradeError, TradeHttp, TradeResponse, TradeSource, age};
 
 const SEARCH: &str = include_str!("data/trade-search-mitts.json");
 const FETCH: &str = include_str!("data/trade-fetch-mitts.json");
+const FETCH_BOTH_KINDS: &str = include_str!("data/trade-fetch-available.json");
 
 fn response(status: u16, headers: &[(&str, &str)], body: &str) -> TradeResponse {
     TradeResponse { status, headers: headers.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())).collect(), body: body.to_owned() }
@@ -86,6 +87,23 @@ fn listing_times_are_read_across_months_and_leap_days() {
     let found = TradeSource::new(&trade).listings(&gloves(), "Covens", Instant::now()).unwrap();
 
     assert_eq!(found.cheapest[0].listed, Some(1_835_481_599));
+}
+
+#[test]
+fn instant_buyout_listings_are_told_from_in_person_ones_and_are_never_afk() {
+    // Recorded 2026-11-16 with both kinds: instant-buyout listings carry the
+    // gold fee. The first seller is made online and away here.
+    let mut fetched: serde_json::Value = serde_json::from_str(FETCH_BOTH_KINDS).unwrap();
+    fetched["result"][0]["listing"]["account"]["online"] = serde_json::json!({ "league": "Covens", "status": "afk" });
+    let trade = FakeTrade::new(search_ok(SEARCH));
+    trade.fetch.borrow_mut().body = fetched.to_string();
+
+    let found = TradeSource::new(&trade).listings(&gloves(), "Covens", Instant::now()).unwrap();
+
+    let kinds: Vec<ListingKind> = found.cheapest.iter().map(|listing| listing.kind).collect();
+    let (instant, in_person) = (ListingKind::InstantBuyout, ListingKind::InPerson);
+    assert_eq!(kinds, [instant, instant, in_person, instant, instant, instant, instant, instant, instant, instant]);
+    assert!(!found.cheapest[0].afk, "an instant buyout needs no one at the keyboard");
 }
 
 #[test]

@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 
 use super::prices::encode;
-use super::trade::{TRADE_SITE, TradeQuery};
+use super::trade::{ListingKind, TRADE_SITE, TradeQuery};
 
 /// Listings shown: one fetch request takes at most 10.
 const SHOWN: usize = 10;
@@ -56,7 +56,8 @@ pub struct Listing {
     pub price: Option<(f64, String)>,
     /// When it was listed, in seconds since 1970.
     pub listed: Option<i64>,
-    /// The seller is online but away.
+    pub kind: ListingKind,
+    /// An in-person seller is online but away.
     pub afk: bool,
 }
 
@@ -231,6 +232,8 @@ struct FetchedListing {
     indexed: Option<String>,
     price: Option<FetchedPrice>,
     account: FetchedAccount,
+    /// Gold the buyer pays on an instant buyout.
+    fee: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -252,9 +255,16 @@ struct Online {
 impl From<FetchedItem> for Listing {
     fn from(item: FetchedItem) -> Listing {
         let listing = item.listing;
-        // Searches ask for online sellers only.
-        let afk = listing.account.online.and_then(|online| online.status).is_some_and(|status| status == "afk");
-        Listing { price: listing.price.map(|price| (price.amount, price.currency)), listed: listing.indexed.as_deref().and_then(unix_seconds), afk }
+        // A Merchant's Tab listing carries the gold fee the buyer pays.
+        let kind = if listing.fee.is_some() { ListingKind::InstantBuyout } else { ListingKind::InPerson };
+        let away = listing.account.online.and_then(|online| online.status).is_some_and(|status| status == "afk");
+        Listing {
+            price: listing.price.map(|price| (price.amount, price.currency)),
+            listed: listing.indexed.as_deref().and_then(unix_seconds),
+            kind,
+            // An instant buyout needs no one at the keyboard.
+            afk: kind == ListingKind::InPerson && away,
+        }
     }
 }
 
