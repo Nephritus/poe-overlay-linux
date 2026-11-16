@@ -148,8 +148,23 @@ pub struct StatFilter<'d> {
     pub text: &'d str,
     /// `None`: the stat at any value.
     pub min: Option<f64>,
+    /// `None`: no upper bound; only the player sets one.
+    pub max: Option<f64>,
     /// Whether the search uses it; the player can switch it off.
     pub enabled: bool,
+}
+
+/// A typed minimum or maximum that isn't a number.
+#[derive(Debug, PartialEq)]
+pub struct NotANumber;
+
+/// A minimum or maximum as the player types it: nothing for no bound.
+pub fn bound(text: &str) -> Result<Option<f64>, NotANumber> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Ok(None);
+    }
+    text.parse::<f64>().ok().filter(|value| value.is_finite()).map(Some).ok_or(NotANumber)
 }
 
 // Pseudo stats (id, wording): totals over every modifier, as the trade site
@@ -272,7 +287,7 @@ impl<'d> TradeQuery<'d> {
         let mut filters = Vec::with_capacity(stats.len() + 6);
         let pseudo = [(TOTAL_LIFE, life.unwrap_or_default()), (TOTAL_ELEMENTAL_RESISTANCE, elemental), (TOTAL_CHAOS_RESISTANCE, chaos)];
         let totals = pseudo.into_iter().chain(TOTAL_ATTRIBUTES.into_iter().zip(attributes));
-        let filter = |(id, text), total: Value| StatFilter { id, text, min: total.minimum(), enabled: true };
+        let filter = |(id, text), total: Value| StatFilter { id, text, min: total.minimum(), max: None, enabled: true };
         filters.extend(totals.filter(|(_, total)| total.value > 0.0).map(|(stat, total)| filter(stat, total)));
         filters.extend(stats.into_iter().map(|(stat, total)| filter((stat.id, &stat.text), total)));
         Some(TradeQuery { base_type: data.base_type(base_line), filters, excluded, skipped })
@@ -285,9 +300,18 @@ impl<'d> TradeQuery<'d> {
             .filters
             .iter()
             .filter(|filter| filter.enabled)
-            .map(|filter| match filter.min {
-                Some(min) => serde_json::json!({ "id": filter.id, "value": { "min": min } }),
-                None => serde_json::json!({ "id": filter.id }),
+            .map(|filter| {
+                let mut value = serde_json::Map::new();
+                for (side, bound) in [("min", filter.min), ("max", filter.max)] {
+                    if let Some(bound) = bound {
+                        value.insert(side.into(), bound.into());
+                    }
+                }
+                if value.is_empty() {
+                    serde_json::json!({ "id": filter.id })
+                } else {
+                    serde_json::json!({ "id": filter.id, "value": value })
+                }
             })
             .collect();
         let mut query = serde_json::json!({

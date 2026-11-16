@@ -123,7 +123,7 @@ fn activate(
     let currency_panel = CurrencyPanel::new();
     overlay.add_panel(currency_panel.widget(), TOGGLED_PANEL_X, TOGGLED_PANEL_Y, PanelKind::Toggled);
     let trades: Trades = Arc::new(Mutex::new(TradeSource::new(TradeSite::new())));
-    let price_panel = PricePanel::new((TOGGLED_PANEL_X, TOGGLED_PANEL_Y), trades);
+    let price_panel = PricePanel::new((TOGGLED_PANEL_X, TOGGLED_PANEL_Y), trades, &overlay);
     overlay.add_panel(price_panel.widget(), TOGGLED_PANEL_X, TOGGLED_PANEL_Y, PanelKind::Toggled);
     let held = config.hotkeys.get(Action::PriceCheck).map(|hotkey| hotkey.modifiers().collect()).unwrap_or_default();
     let copier = ItemCopier::spawn(key_code_of_c(), held);

@@ -24,7 +24,7 @@ Set the game's launch options to:
 /path/to/poe-overlay launch -- %command%
 ```
 
-The overlay starts with the game, shows only while the game window is focused (on the game's monitor), and exits when the game exits. It never takes keyboard focus. Only one overlay runs at a time.
+The overlay starts with the game, shows only while the game window is focused (on the game's monitor), and exits when the game exits. It takes keys from the game only while you type in one of its boxes (a Price Check minimum or maximum). Only one overlay runs at a time.
 
 ### Cursor lock fix
 
@@ -67,7 +67,7 @@ The Currency Rates Panel lists the 12 most traded currencies of the league, pric
 
 ## Settings
 
-`poe-overlay settings` opens a normal window, whether or not the game runs. It's the one place you type into; the overlay itself never takes keyboard focus. It sets:
+`poe-overlay settings` opens a normal window, whether or not the game runs. Apart from the Price Check minimum and maximum boxes, it's the one place you type into. It sets:
 
 - **League**: the league Currency Rates and Price Check price in, from the list poe.ninja prices. "Current challenge league" follows poe.ninja's first league from one league to the next.
 - **Client.txt**: where the game's log is, for installs Steam doesn't know (Lutris, Heroic). Leave it empty to find it through Steam. **Choose…** opens a file picker; a path that can't be read is reported in the window and not saved.
@@ -104,7 +104,7 @@ poe.ninja doesn't price these, so the overlay searches the [official trade site]
 - total life (flat life plus half the strength, as the trade site counts it), total elemental resistance, chaos resistance, strength, dexterity and intelligence, counting every modifier;
 - other explicit (and fractured) modifiers, each on its own. Implicit and crafted modifiers only count toward the totals.
 
-Each stat the search uses is a row on the left with its minimum. Untick the ones that don't matter and press **Search** to see what that finds; ticking alone sends nothing, and Search waits while a search is out. Modifiers left out of the search are listed under it: ones the trade site has no stat for, and implicit, crafted and enchant modifiers that aren't in a total. The stats and base types come from a snapshot of the trade site's data in `data/trade`, refreshed with `data/trade/update.sh` when a league adds new ones.
+Each stat the search uses is a row on the left with its minimum and maximum. Untick the ones that don't matter, or click a box and type another bound (empty means none), then press **Search** or Enter to see what that finds; ticking alone sends nothing, and Search waits while a search is out. While you type, the game gets no keys: the Panel says so, and Enter, Esc or closing the Panel gives them back. Modifiers left out of the search are listed under it: ones the trade site has no stat for, and implicit, crafted and enchant modifiers that aren't in a total. The stats and base types come from a snapshot of the trade site's data in `data/trade`, refreshed with `data/trade/update.sh` when a league adds new ones.
 
 **About the trade site:** its search endpoints aren't part of GGG's documented API, and GGG's [developer docs](https://www.pathofexile.com/developer/docs) say unlisted endpoints aren't supported. Every Price Check of an item poe.ninja doesn't price, and every press of Search, sends one search and one fetch, the way Awakened PoE Trade and Sidekick do, with a browser User-Agent (the site refuses others). The overlay follows the rate limits the site states in its answers and sends nothing while one is reached; the Panel says when you can search again. After a refusal (HTTP 403) it waits five minutes. The same search within five minutes reuses the last answer.
 

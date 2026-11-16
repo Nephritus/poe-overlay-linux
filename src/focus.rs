@@ -26,6 +26,9 @@ pub enum Visibility {
     Hidden,
     /// Shown on the named output; `None` lets the compositor pick.
     Shown { output: Option<String> },
+    /// The game is open but no window is focused: a layer surface holds the
+    /// keyboard, such as the Overlay while the player types in a Panel.
+    NoWindowFocused { output: Option<String> },
 }
 
 #[derive(Debug, Default)]
@@ -46,11 +49,15 @@ impl GameFocus {
     }
 
     pub fn visibility(&self) -> Visibility {
-        self.toplevels
-            .values()
-            .find(|t| t.activated && poe1::is_game_window(&t.app_id, &t.title))
-            .map_or(Visibility::Hidden, |game| Visibility::Shown {
-                output: game.outputs.first().cloned(),
-            })
+        let games = || self.toplevels.values().filter(|t| poe1::is_game_window(&t.app_id, &t.title));
+        let Some(game) = games().find(|t| t.activated).or_else(|| games().next()) else { return Visibility::Hidden };
+        let output = game.outputs.first().cloned();
+        if game.activated {
+            Visibility::Shown { output }
+        } else if self.toplevels.values().any(|t| t.activated) {
+            Visibility::Hidden
+        } else {
+            Visibility::NoWindowFocused { output }
+        }
     }
 }

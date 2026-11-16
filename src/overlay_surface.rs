@@ -1,9 +1,9 @@
 //! The Overlay: a full-screen, see-through layer-shell window over the game
-//! that holds Panels. It never takes keyboard focus, shows only while the
-//! game is focused (on the game's output), and only shown Panels catch
-//! clicks; everything else passes through to the game.
+//! that holds Panels. It takes the keyboard only while the player types in a
+//! Panel, shows only while the game is focused (on the game's output), and
+//! only shown Panels catch clicks; everything else passes through to the game.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk::prelude::*;
@@ -28,6 +28,9 @@ window.poe-overlay { background: transparent; }
 .panel-number { font-feature-settings: 'tnum'; margin-left: 12px; }
 .panel-head, .panel-status { font-size: smaller; color: rgb(160, 160, 170); }
 .panel-error { font-size: smaller; color: rgb(230, 120, 100); }
+.panel-typing { font-size: smaller; color: rgb(230, 190, 110); }
+.panel-bound { min-height: 0; min-width: 0; padding: 0 4px; }
+.panel-bound.error { color: rgb(230, 120, 100); }
 ";
 
 /// How long a Panel stays shown.
@@ -50,6 +53,8 @@ pub struct OverlaySurface {
     window: gtk::ApplicationWindow,
     fixed: gtk::Fixed,
     panels: Rc<RefCell<Vec<Panel>>>,
+    /// Whether the Overlay holds the keyboard (the player types in a Panel).
+    typing: Rc<Cell<bool>>,
 }
 
 impl OverlaySurface {
@@ -77,7 +82,7 @@ impl OverlaySurface {
         let fixed = gtk::Fixed::new();
         window.set_child(Some(&fixed));
 
-        let surface = Self { window, fixed, panels: Rc::default() };
+        let surface = Self { window, fixed, panels: Rc::default(), typing: Rc::default() };
         surface.track_click_area();
         surface
     }
@@ -111,6 +116,7 @@ impl OverlaySurface {
         if !self.window.is_visible() {
             return false;
         }
+        self.release_keyboard();
         for panel in self.panels.borrow().iter().filter(|p| p.kind == PanelKind::Toggled && p.widget != *widget) {
             panel.widget.set_visible(false);
         }
@@ -119,6 +125,7 @@ impl OverlaySurface {
     }
 
     pub fn hide(&self, widget: &impl IsA<gtk::Widget>) {
+        self.release_keyboard();
         widget.as_ref().set_visible(false);
     }
 
@@ -132,20 +139,49 @@ impl OverlaySurface {
         self.window.width()
     }
 
-    /// Whether the game is focused (the Overlay shows only then).
+    /// Whether the game is focused (the Overlay shows only then) and has the
+    /// keyboard: not while the player types in a Panel.
     pub fn game_focused(&self) -> bool {
-        self.window.is_visible()
+        self.window.is_visible() && !self.typing.get()
+    }
+
+    /// Takes the keyboard from the game while the player types in a Panel;
+    /// [`OverlaySurface::release_keyboard`] gives it back.
+    pub fn take_keyboard(&self) {
+        self.typing.set(true);
+        self.window.set_keyboard_mode(KeyboardMode::Exclusive);
+    }
+
+    /// Gives the keyboard back to the game; also done whenever a Panel
+    /// closes or the game loses focus.
+    pub fn release_keyboard(&self) {
+        if self.typing.replace(false) {
+            self.window.set_keyboard_mode(KeyboardMode::None);
+            GtkWindowExt::set_focus(&self.window, None::<&gtk::Widget>);
+        }
+    }
+
+    /// Calls `typing` with whether the Overlay holds the keyboard, whenever
+    /// that changes.
+    pub fn connect_keyboard(&self, typing: impl Fn(bool) + 'static) {
+        self.window.connect_is_active_notify(move |window| typing(window.is_active()));
     }
 
     /// Follows the game window's focus: shows the Overlay on the game's
     /// output, or hides it and closes `Toggled` Panels.
     pub fn follow_game(&self, visibility: &Visibility) {
-        let Visibility::Shown { output } = visibility else {
-            self.window.set_visible(false);
-            for panel in self.panels.borrow().iter().filter(|p| p.kind == PanelKind::Toggled) {
-                panel.widget.set_visible(false);
+        let output = match visibility {
+            Visibility::Shown { output } => output,
+            // The Overlay itself holds the keyboard.
+            Visibility::NoWindowFocused { .. } if self.typing.get() => return,
+            Visibility::Hidden | Visibility::NoWindowFocused { .. } => {
+                self.release_keyboard();
+                self.window.set_visible(false);
+                for panel in self.panels.borrow().iter().filter(|p| p.kind == PanelKind::Toggled) {
+                    panel.widget.set_visible(false);
+                }
+                return;
             }
-            return;
         };
         let monitor = output.as_deref().and_then(monitor_named);
         if self.window.is_visible() && self.window.monitor() == monitor {

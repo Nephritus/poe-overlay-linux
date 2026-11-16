@@ -18,7 +18,7 @@ use crate::panel_prices::{PriceTable, Prices, Trades, ask, clear};
 use crate::poe1::item::{self, Item, ItemKind};
 use crate::poe1::item_copy::CopyError;
 use crate::poe1::prices::ItemPrices;
-use crate::poe1::trade::{TradeData, TradeQuery};
+use crate::poe1::trade::{NotANumber, TradeData, TradeQuery, bound};
 use crate::poe1::trade_search::{Listings, TradeError, age};
 
 const WIDTH: i32 = 320;
@@ -37,6 +37,13 @@ struct LeagueSearch {
     league: Arc<str>,
 }
 
+/// One stat's controls in the search.
+struct FilterRow {
+    checkbox: gtk::CheckButton,
+    min: gtk::Entry,
+    max: gtk::Entry,
+}
+
 /// Widgets are reference-counted, so clones share the same Panel.
 #[derive(Clone)]
 pub struct PricePanel {
@@ -46,9 +53,10 @@ pub struct PricePanel {
     status: gtk::Label,
     /// The trade site search, for items poe.ninja doesn't price.
     search: gtk::Grid,
-    /// One row per stat searched: a checkbox with its wording, its minimum.
+    /// One row per stat searched: a checkbox with its wording, its minimum
+    /// and maximum.
     filters: gtk::Grid,
-    checks: Rc<RefCell<Vec<gtk::CheckButton>>>,
+    rows: Rc<RefCell<Vec<FilterRow>>>,
     search_button: gtk::Button,
     /// Modifiers the search leaves out.
     left_out: gtk::Label,
@@ -59,6 +67,8 @@ pub struct PricePanel {
     /// The search shown; `None` while it is being sent.
     shown: Rc<RefCell<Option<LeagueSearch>>>,
     trades: Trades,
+    /// Takes the keyboard while the player types a bound.
+    overlay: OverlaySurface,
     /// Where the Panel goes on the left half (where it was added).
     left: (f64, f64),
     /// The copied text the Panel shows, to tell a second press on the same
@@ -72,18 +82,18 @@ pub struct PricePanel {
 impl PricePanel {
     /// `left`: where it goes on the left half, as passed to
     /// [`OverlaySurface::add_panel`].
-    pub fn new(left: (f64, f64), trades: Trades) -> Self {
+    pub fn new(left: (f64, f64), trades: Trades, overlay: &OverlaySurface) -> Self {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
         root.add_css_class("panel");
         root.set_size_request(WIDTH, -1);
         let title = gtk::Label::builder().xalign(0.0).wrap(true).max_width_chars(1).hexpand(true).build();
         title.add_css_class("panel-title");
-        // Pointer-only: the Overlay never takes keyboard focus.
+        // Pointer-only: the Overlay takes keys only for the bound boxes.
         let close = gtk::Button::builder().label("✕").tooltip_text("Close").focusable(false).focus_on_click(false).build();
         close.add_css_class("panel-button");
         close.add_css_class("flat");
-        let panel = root.clone();
-        close.connect_clicked(move |_| panel.set_visible(false));
+        let (closer, panel) = (overlay.clone(), root.clone());
+        close.connect_clicked(move |_| closer.hide(&panel));
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 4);
         header.append(&title);
         header.append(&close);
@@ -92,12 +102,15 @@ impl PricePanel {
         // Left: what the search asks for.
         let filters = gtk::Grid::builder().column_spacing(8).row_spacing(2).build();
         let search_button = gtk::Button::builder().label("Search").focusable(false).focus_on_click(false).halign(gtk::Align::Start).build();
+        let typing = gtk::Label::builder().label("Typing: Enter searches, Esc gives the keys back to the game.").xalign(0.0).wrap(true).max_width_chars(1).visible(false).build();
+        typing.add_css_class("panel-typing");
         let left_out = gtk::Label::builder().xalign(0.0).wrap(true).max_width_chars(1).build();
         left_out.add_css_class("panel-status");
         let criteria = gtk::Box::new(gtk::Orientation::Vertical, 6);
         criteria.set_size_request(CRITERIA_WIDTH, -1);
         criteria.append(&filters);
         criteria.append(&search_button);
+        criteria.append(&typing);
         criteria.append(&left_out);
         // Right: what it finds.
         let found = gtk::Label::builder().xalign(0.0).wrap(true).max_width_chars(1).build();
@@ -123,19 +136,32 @@ impl PricePanel {
             status,
             search,
             filters,
-            checks: Rc::default(),
+            rows: Rc::default(),
             search_button: search_button.clone(),
             left_out,
             found,
             listings,
             shown: Rc::default(),
             trades,
+            overlay: overlay.clone(),
             left,
             text: Rc::default(),
             presses: Arc::default(),
         };
         let searcher = panel.clone();
         search_button.connect_clicked(move |_| searcher.search_again());
+        // Esc gives the keys back without searching.
+        let keys = gtk::EventControllerKey::new();
+        let releaser = panel.overlay.clone();
+        keys.connect_key_pressed(move |_, key, _, _| {
+            if key != gtk::gdk::Key::Escape {
+                return gtk::glib::Propagation::Proceed;
+            }
+            releaser.release_keyboard();
+            gtk::glib::Propagation::Stop
+        });
+        panel.root.add_controller(keys);
+        overlay.connect_keyboard(move |held| typing.set_visible(held));
         panel
     }
 
@@ -150,6 +176,42 @@ impl PricePanel {
         self.table.borrow().widget().set_visible(false);
         self.status.set_visible(true);
         self.search.set_visible(false);
+    }
+
+    /// A box the player types a minimum or maximum in. Clicking it takes the
+    /// keyboard from the game; Enter searches.
+    fn bound_box(&self, placeholder: &str, value: Option<f64>) -> gtk::Entry {
+        let entry = gtk::Entry::builder().placeholder_text(placeholder).width_chars(4).max_width_chars(4).xalign(1.0).valign(gtk::Align::Center).build();
+        entry.add_css_class("panel-bound");
+        if let Some(value) = value {
+            entry.set_text(&value.to_string());
+        }
+        let click = gtk::GestureClick::new();
+        click.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let (overlay, typed) = (self.overlay.clone(), entry.clone());
+        click.connect_pressed(move |_, _, _, _| {
+            overlay.take_keyboard();
+            typed.grab_focus();
+        });
+        entry.add_controller(click);
+        // Typing replaces the value: selected once the box's own click is
+        // done, as it places the cursor on release (which it claims, so only
+        // a legacy controller sees it).
+        let release = gtk::EventControllerLegacy::new();
+        release.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let typed = entry.clone();
+        release.connect_event(move |_, event| {
+            if event.event_type() == gtk::gdk::EventType::ButtonRelease {
+                let typed = typed.clone();
+                gtk::glib::idle_add_local_once(move || typed.select_region(0, -1));
+            }
+            gtk::glib::Propagation::Proceed
+        });
+        entry.add_controller(release);
+        entry.connect_changed(|entry| entry.remove_css_class("error"));
+        let searcher = self.clone();
+        entry.connect_activate(move |_| searcher.search_again());
+        entry
     }
 
     fn show_error(&self, title: &str, message: &str) {
@@ -191,17 +253,18 @@ impl PricePanel {
         self.status.set_visible(false);
         self.search.set_visible(true);
         clear(&self.filters);
-        let mut checks = self.checks.borrow_mut();
-        checks.clear();
+        let mut rows = self.rows.borrow_mut();
+        rows.clear();
         for (row, filter) in (0..).zip(&query.filters) {
             let text = gtk::Label::builder().label(filter.text).xalign(0.0).wrap(true).max_width_chars(1).hexpand(true).build();
-            // Pointer-only: the Overlay never takes keyboard focus.
+            // Pointer-only: the Overlay takes keys only for the boxes.
             let checkbox = gtk::CheckButton::builder().active(filter.enabled).child(&text).hexpand(true).focusable(false).focus_on_click(false).build();
-            let min = gtk::Label::builder().label(filter.min.map(|min| min.to_string()).unwrap_or_default()).xalign(1.0).build();
-            min.add_css_class("panel-number");
+            let min = self.bound_box("min", filter.min);
+            let max = self.bound_box("max", filter.max);
             self.filters.attach(&checkbox, 0, row, 1, 1);
             self.filters.attach(&min, 1, row, 1, 1);
-            checks.push(checkbox);
+            self.filters.attach(&max, 2, row, 1, 1);
+            rows.push(FilterRow { checkbox, min, max });
         }
         let mut left_out = String::new();
         for (heading, modifiers) in [("the trade site has no such stat", &query.excluded), ("implicit, crafted or enchant", &query.skipped)] {
@@ -248,13 +311,31 @@ impl PricePanel {
         }
     }
 
-    /// The Search button: the shown search again, with the stats switched
-    /// on and off as the player left them.
+    /// The Search button (or Enter in a bound box): the shown search again,
+    /// with the stats switched on and off and the bounds as the player left
+    /// them. A bound that isn't a number is marked and nothing is sent.
     fn search_again(&self) {
-        let Some(mut search) = self.shown.take() else { return };
-        for (filter, checkbox) in search.query.filters.iter_mut().zip(self.checks.borrow().iter()) {
-            filter.enabled = checkbox.is_active();
+        let mut search = self.shown.borrow_mut();
+        let Some(shown) = search.as_mut() else { return };
+        let rows = self.rows.borrow();
+        let mut typed_wrong = false;
+        for (filter, row) in shown.query.filters.iter_mut().zip(rows.iter()) {
+            filter.enabled = row.checkbox.is_active();
+            for (entry, side) in [(&row.min, &mut filter.min), (&row.max, &mut filter.max)] {
+                match bound(&entry.text()) {
+                    Ok(value) => *side = value,
+                    Err(NotANumber) => {
+                        entry.add_css_class("error");
+                        typed_wrong = true;
+                    }
+                }
+            }
         }
+        if typed_wrong {
+            return self.set_found("A minimum or maximum isn't a number.", true);
+        }
+        let search = search.take().expect("checked above");
+        self.overlay.release_keyboard();
         let check = self.presses.fetch_add(1, Ordering::Relaxed) + 1;
         gtk::glib::spawn_future_local(self.clone().search(check, search));
     }

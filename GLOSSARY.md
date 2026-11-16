@@ -15,7 +15,7 @@ _Avoid_: Player, account, toon
 ## Overlay
 
 **Overlay**:
-The always-on-top, see-through layer over the game window that holds Panels; it never takes keyboard focus and shows only while the game is focused.
+The always-on-top, see-through layer over the game window that holds Panels; it shows only while the game is focused and takes the keyboard only while the player types in one of its boxes (a Price Check minimum or maximum).
 _Avoid_: Window, HUD, companion (the program as a whole)
 
 **Panel**:
@@ -31,7 +31,7 @@ A key combination, chosen in `[hotkeys]`, that the overlay grabs in Xwayland whi
 _Avoid_: Shortcut, keybind (the compositor's own entry), macro
 
 **Settings window**:
-The normal window `poe-overlay settings` opens, where the player types and chooses settings; separate from the Overlay, which never takes keyboard focus.
+The normal window `poe-overlay settings` opens, where the player types and chooses settings; separate from the Overlay, which takes the keyboard only for a Price Check bound.
 _Avoid_: Preferences, options dialog, config editor
 
 ## Leveling

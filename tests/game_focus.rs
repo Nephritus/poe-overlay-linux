@@ -34,6 +34,18 @@ fn panel_hides_when_another_window_is_activated() {
 }
 
 #[test]
+fn no_window_focused_while_the_game_is_open_is_told_apart_from_another_window_focused() {
+    // A layer surface holding the keyboard (the Overlay while the player
+    // types in a Panel) leaves no window activated.
+    let mut focus = GameFocus::default();
+    focus.apply(updated(1, window("steam_app_238960", "Path of Exile", true, &["DP-2"])));
+
+    focus.apply(updated(1, window("steam_app_238960", "Path of Exile", false, &["DP-2"])));
+
+    assert_eq!(focus.visibility(), Visibility::NoWindowFocused { output: Some("DP-2".into()) });
+}
+
+#[test]
 fn panel_returns_when_the_game_is_activated_again() {
     let mut focus = GameFocus::default();
     focus.apply(updated(2, window("firefox", "poe.ninja — Mozilla Firefox", true, &["DP-2"])));

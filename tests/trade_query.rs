@@ -3,7 +3,7 @@
 //! rounded down; ids are the snapshot's.
 
 use poe_overlay::poe1::item::{Item, parse};
-use poe_overlay::poe1::trade::{TradeData, TradeQuery};
+use poe_overlay::poe1::trade::{TradeData, TradeQuery, bound};
 
 fn sample(name: &str) -> String {
     std::fs::read_to_string(format!("{}/tests/data/items/{name}.txt", env!("CARGO_MANIFEST_DIR"))).unwrap()
@@ -272,3 +272,33 @@ fn switched_off_filters_are_left_out_of_the_search() {
     assert_eq!(json["query"]["stats"][0]["filters"], searched);
 }
 
+#[test]
+fn typed_minimum_and_maximum_are_searched_and_an_empty_side_left_out() {
+    let mut gloves = query(&item("rare-gloves-death-nails"));
+    gloves.filters[0].max = Some(80.0);
+    gloves.filters[1].min = None;
+    gloves.filters[1].max = Some(30.0);
+    gloves.filters[2].min = None;
+
+    let json: serde_json::Value = serde_json::from_str(&gloves.to_json()).unwrap();
+
+    let searched = serde_json::json!([
+        { "id": "pseudo.pseudo_total_life", "value": { "min": 65.0, "max": 80.0 } },
+        { "id": "pseudo.pseudo_total_elemental_resistance", "value": { "max": 30.0 } },
+        { "id": "pseudo.pseudo_total_intelligence" },
+        { "id": "explicit.stat_3237948413", "value": { "min": 0.2 } },
+    ]);
+    assert_eq!(json["query"]["stats"][0]["filters"], searched);
+}
+
+#[test]
+fn typed_bounds_are_numbers_or_nothing() {
+    assert_eq!(bound(""), Ok(None));
+    assert_eq!(bound("  "), Ok(None));
+    assert_eq!(bound("65"), Ok(Some(65.0)));
+    assert_eq!(bound(" 0.25 "), Ok(Some(0.25)));
+    assert_eq!(bound("-12"), Ok(Some(-12.0)));
+    for junk in ["abc", "6 5", "1e999", "NaN", "inf", "12%"] {
+        assert!(bound(junk).is_err(), "{junk}");
+    }
+}
