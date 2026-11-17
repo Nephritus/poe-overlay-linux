@@ -49,9 +49,9 @@ struct SettingsWindow {
     login_status: gtk::Label,
     login_button: gtk::Button,
     logged_in: Rc<Cell<bool>>,
-    /// Counts Log in and Log out clicks, so a search for the login stops
-    /// at the next one.
-    login_clicks: Rc<Cell<u32>>,
+    /// Counts the times the login state was shown, so a search for the
+    /// login stops once a newer one starts (after Log in or Log out).
+    login_shown: Rc<Cell<u32>>,
 }
 
 impl SettingsWindow {
@@ -113,7 +113,7 @@ impl SettingsWindow {
             login_status,
             login_button,
             logged_in: Rc::default(),
-            login_clicks: Rc::default(),
+            login_shown: Rc::default(),
         };
         let file = config::path().ok_or_else(|| "No HOME folder, so there's nowhere to save settings.".to_owned());
         let current = file.as_deref().map_err(Clone::clone).and_then(read);
@@ -254,7 +254,7 @@ impl SettingsWindow {
     /// click on Log in, opens the login page if no browser holds one.
     fn show_login(&self, on: bool, clicked: bool) {
         self.logged_in.set(on);
-        self.login_clicks.set(self.login_clicks.get() + 1);
+        self.login_shown.set(self.login_shown.get() + 1);
         self.login_button.set_label(if on { "Log out" } else { "Log in" });
         if !on {
             let text = if clicked { "Logged out. Your browser stays logged in on pathofexile.com." } else { "Not logged in." };
@@ -262,7 +262,7 @@ impl SettingsWindow {
             return;
         }
         self.set_login_status("Looking for the login in your browsers…", false);
-        let (this, click) = (self.clone(), self.login_clicks.get());
+        let (this, shown) = (self.clone(), self.login_shown.get());
         glib::spawn_future_local(async move {
             let mut opened = !clicked;
             loop {
@@ -272,7 +272,7 @@ impl SettingsWindow {
                 })
                 .await;
                 let Ok((found, problems)) = read else { return };
-                if this.login_clicks.get() != click {
+                if this.login_shown.get() != shown {
                     return;
                 }
                 if let Some(browser) = found {

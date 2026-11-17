@@ -34,9 +34,9 @@ pub struct Login {
     cookie_header: String,
     /// When the first of its cookies expires; `None` if all last until the
     /// browser closes.
-    pub expires: Option<SystemTime>,
+    expires: Option<SystemTime>,
     /// It has a trade token (the browser may not have one yet).
-    pub has_token: bool,
+    has_token: bool,
 }
 
 impl Login {

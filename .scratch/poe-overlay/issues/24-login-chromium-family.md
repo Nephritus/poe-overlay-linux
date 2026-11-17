@@ -24,6 +24,7 @@
   - A Chrome profile under a temporary home whose `POESESSID` was encrypted (`v11`) with the real "Chrome Safe Storage" password from GNOME Keyring: the Overlay's reader fetched the key over D-Bus and decrypted it (19 characters, right length), UA `Chrome/156.0.0.0`.
   - Same home plus a newer Firefox login: default browser Chrome → Chrome's login; default Firefox → Firefox's; neither default → the newest (Firefox).
   - A Brave profile whose key isn't in the keyring: Settings, after Log in, showed in red "Brave's cookies need the key "Brave Safe Storage", which isn't in your keyring." under the waiting line, and opened the login page.
+- **After review:** see ticket 23 (shared `Copy::read`). The KWallet path stays unverified here; KWallet may still ask the player to allow `poe-overlay` the first time, even with the wallet open.
 
 **Needs a check (human):**
 

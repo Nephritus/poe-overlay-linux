@@ -280,15 +280,13 @@ impl Profile {
 }
 
 fn gecko_cookies(file: &Path, domain: &str) -> Result<Vec<Cookie>, String> {
-    let copy = Copy::of(file).map_err(|err| err.to_string())?;
-    let db = copy.open().map_err(|err| err.to_string())?;
-    let mut rows = db
-        .prepare("SELECT name, value, expiry, creationTime FROM moz_cookies WHERE host = ?1 OR substr(host, -length(?1) - 1) = '.' || ?1")
-        .map_err(|err| err.to_string())?;
-    let cookies = rows.query_map([domain], |row| {
-        Ok(Cookie { name: row.get(0)?, value: row.get(1)?, expires: Some(gecko_expiry(row.get(2)?)), created: since_1970(Duration::from_micros(row.get::<_, i64>(3)?.max(0) as u64)) })
-    });
-    cookies.and_then(Iterator::collect).map_err(|err| err.to_string())
+    Copy::read(file, |db| {
+        let mut rows = db.prepare("SELECT name, value, expiry, creationTime FROM moz_cookies WHERE host = ?1 OR substr(host, -length(?1) - 1) = '.' || ?1")?;
+        let cookies = rows.query_map([domain], |row| {
+            Ok(Cookie { name: row.get(0)?, value: row.get(1)?, expires: Some(gecko_expiry(row.get(2)?)), created: since_1970(Duration::from_micros(row.get::<_, i64>(3)?.max(0) as u64)) })
+        })?;
+        cookies.collect()
+    })
 }
 
 /// Firefox 159 writes milliseconds, older versions seconds; no cookie
@@ -322,20 +320,17 @@ struct ChromiumRows {
 }
 
 fn chromium_rows(file: &Path, domain: &str) -> Result<ChromiumRows, String> {
-    let copy = Copy::of(file).map_err(|err| err.to_string())?;
-    let db = copy.open().map_err(|err| err.to_string())?;
-    let version: String = db.query_row("SELECT value FROM meta WHERE key = 'version'", [], |row| row.get(0)).map_err(|err| err.to_string())?;
-    let mut rows = db
-        .prepare("SELECT host_key, name, value, encrypted_value, expires_utc, creation_utc FROM cookies WHERE host_key = ?1 OR substr(host_key, -length(?1) - 1) = '.' || ?1")
-        .map_err(|err| err.to_string())?;
-    let rows = rows.query_map([domain], |row| {
-        // 0 for a cookie that lasts until the browser closes.
-        let expires: i64 = row.get(4)?;
-        let cookie = Cookie { name: row.get(1)?, value: row.get(2)?, expires: (expires > 0).then(|| since_1601(expires)), created: since_1601(row.get(5)?) };
-        Ok(ChromiumRow { host: row.get(0)?, cookie, encrypted: row.get(3)? })
-    });
-    let rows = rows.and_then(Iterator::collect).map_err(|err| err.to_string())?;
-    Ok(ChromiumRows { hashed: version.parse::<u32>().is_ok_and(|version| version >= 24), rows })
+    Copy::read(file, |db| {
+        let version: String = db.query_row("SELECT value FROM meta WHERE key = 'version'", [], |row| row.get(0))?;
+        let mut rows = db.prepare("SELECT host_key, name, value, encrypted_value, expires_utc, creation_utc FROM cookies WHERE host_key = ?1 OR substr(host_key, -length(?1) - 1) = '.' || ?1")?;
+        let rows = rows.query_map([domain], |row| {
+            // 0 for a cookie that lasts until the browser closes.
+            let expires: i64 = row.get(4)?;
+            let cookie = Cookie { name: row.get(1)?, value: row.get(2)?, expires: (expires > 0).then(|| since_1601(expires)), created: since_1601(row.get(5)?) };
+            Ok(ChromiumRow { host: row.get(0)?, cookie, encrypted: row.get(3)? })
+        })?;
+        Ok(ChromiumRows { hashed: version.parse::<u32>().is_ok_and(|version| version >= 24), rows: rows.collect::<rusqlite::Result<_>>()? })
+    })
 }
 
 /// The keys a Chromium browser's cookies may be encrypted with.
@@ -417,6 +412,13 @@ struct Copy {
 }
 
 impl Copy {
+    /// Runs `read` on a private copy of the cookie file `file`.
+    fn read<T>(file: &Path, read: impl FnOnce(&Connection) -> rusqlite::Result<T>) -> Result<T, String> {
+        let copy = Copy::of(file).map_err(|err| err.to_string())?;
+        let db = Connection::open_with_flags(&copy.file, OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX).map_err(|err| err.to_string())?;
+        read(&db).map_err(|err| err.to_string())
+    }
+
     fn of(file: &Path) -> std::io::Result<Copy> {
         static TAKEN: AtomicU32 = AtomicU32::new(0);
         let name = file.file_name().expect("a cookie file has a name");
@@ -431,10 +433,6 @@ impl Copy {
             _ => {}
         }
         Ok(copy)
-    }
-
-    fn open(&self) -> rusqlite::Result<Connection> {
-        Connection::open_with_flags(&self.file, OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX)
     }
 }
 
