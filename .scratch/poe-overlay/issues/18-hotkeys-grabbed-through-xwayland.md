@@ -19,7 +19,7 @@ This replaces the compositor-bind mechanism (clean cutover):
 - [x] Keys work with NumLock and CapsLock on (grab each key with every lock-modifier combination)
 - [x] A key Xwayland refuses (another X11 client already grabbed it) is named on the Route Panel with a pointer to `[hotkeys]`
 - [x] The niri writer, `setup hotkeys`, the first-launch row and `hotkeys.toml` are gone, and README and GLOSSARY ("Hotkey") describe the new mechanism; `trigger` stays documented as the fallback
-- [ ] Recorded on at least one compositor with a standard Xwayland (KDE, Hyprland or sway) besides niri
+- [x] Recorded on at least one compositor with a standard Xwayland (KDE, Hyprland or sway) besides niri
 
 ## Comments
 
@@ -74,3 +74,20 @@ Precedent: Awakened PoE Trade's Linux hotkeys go through Electron's `globalShort
 | Other apps | Alt+D in Firefox (Wayland) still focuses the address bar while the game runs | |
 | Price Check copy | Alt+D over an item prices it (the copy reaches the game after you let go of D) | |
 | NumLock | With NumLock on, Alt+R still toggles Currency Rates | |
+
+### Other compositors (agent, 2026-11-17)
+
+Recorded with ticket 15, each compositor nested in niri with its own Xwayland and the same stand-in game; keys pressed through uinput only while niri reported the nested compositor's window focused.
+
+| | sway 1.12 | Hyprland 0.57.2 |
+|---|---|---|
+| Alt+R in the game | Currency Rates opened, then closed | same |
+| Alt+D in the game | Price Check of Carcass Jack; the game got only the copy (`ESC`, Ctrl+C), never `d` | same |
+| Alt+D in a Wayland window | it received `^[d`, nothing ran | same |
+| Alt+D in another X11 window | it received `^[d`, nothing ran | same |
+
+**KWin 6.8.3** ran headless (its nested Wayland backend fails at `eglInitialize` here), which gives Xwayland no keyboard. An X11 probe could not grab Alt+R while the game was active (held by the overlay) and could while a Wayland window was, so the grabs follow focus there too. Whether a key press then runs its Action on KDE is untested: a human check.
+
+| Check | Pass when | Result |
+|---|---|---|
+| KDE hotkeys | On KDE Plasma, Alt+R toggles Currency Rates in game | |

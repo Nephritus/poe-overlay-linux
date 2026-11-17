@@ -6,7 +6,8 @@ This product isn't affiliated with or endorsed by Grinding Gear Games in any way
 
 ## Requirements
 
-- A Wayland compositor with `wlr-layer-shell`, `wlr-foreign-toplevel-management` and Xwayland. niri is tested so far. GNOME is not supported.
+- A Wayland compositor with `wlr-layer-shell` (the overlay draws over the game with it), a list of windows (`wlr-foreign-toplevel-management`, or KDE Plasma's window management) and Xwayland: niri, KDE Plasma 6, Hyprland or sway. GNOME has no layer-shell and isn't supported: the overlay prints why and exits, and the game runs without it.
+- On KDE Plasma 6.0 to 6.7, KWin shows its window list only to programs whose desktop entry asks for it. The overlay writes a hidden one for itself, `~/.local/share/applications/io.github.nephritus.PoeOverlay.KWin.desktop`, and rewrites it when the program moves (an AppImage runs from a new place each time). Plasma 6.8 and later don't need it. Delete it if you remove the overlay.
 - GTK 4 and gtk4-layer-shell. On Arch: `pacman -S gtk4 gtk4-layer-shell`.
 - The English game client.
 

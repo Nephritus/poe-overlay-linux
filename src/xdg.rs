@@ -12,6 +12,11 @@ pub fn state_home() -> Option<PathBuf> {
     base("XDG_STATE_HOME", ".local/state")
 }
 
+/// `$XDG_DATA_HOME`, else `~/.local/share`; `None` without `HOME`.
+pub fn data_home() -> Option<PathBuf> {
+    base("XDG_DATA_HOME", ".local/share")
+}
+
 /// `$XDG_RUNTIME_DIR` (private to the user, in memory), else the temporary
 /// folder.
 pub fn runtime_dir() -> PathBuf {

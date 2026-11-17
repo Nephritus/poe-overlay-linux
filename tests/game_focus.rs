@@ -1,4 +1,4 @@
-use poe_overlay::focus::{GameFocus, Toplevel, ToplevelEvent, Visibility};
+use poe_overlay::focus::{GameFocus, Rect, Toplevel, ToplevelEvent, Visibility, outputs_under};
 
 fn window(app_id: &str, title: &str, activated: bool, outputs: &[&str]) -> Toplevel {
     Toplevel {
@@ -102,4 +102,33 @@ fn panel_is_shown_without_an_output_when_the_compositor_has_not_reported_one() {
     focus.apply(updated(1, window("steam_app_238960", "Path of Exile", true, &[])));
 
     assert_eq!(focus.visibility(), Visibility::Shown { output: None });
+}
+
+const fn rect(x: i32, y: i32, width: i32, height: i32) -> Rect {
+    Rect { x, y, width, height }
+}
+
+/// Two monitors side by side: a 4K one at scale 2 (1920×1080 logical) and,
+/// to its right, a 1440p one placed lower.
+fn outputs() -> [(&'static str, Rect); 2] {
+    [("DP-1", rect(0, 0, 1920, 1080)), ("HDMI-A-1", rect(1920, 200, 2560, 1440))]
+}
+
+#[test]
+fn a_window_is_on_the_output_holding_most_of_it() {
+    // Fullscreen on the right monitor.
+    assert_eq!(outputs_under(rect(1920, 200, 2560, 1440), outputs()), ["HDMI-A-1"]);
+    // Straddling both, more of it on the left one.
+    assert_eq!(outputs_under(rect(1000, 300, 1200, 600), outputs()), ["DP-1", "HDMI-A-1"]);
+    // Straddling both, more of it on the right one.
+    assert_eq!(outputs_under(rect(1700, 300, 1200, 600), outputs()), ["HDMI-A-1", "DP-1"]);
+}
+
+#[test]
+fn a_window_off_every_output_is_on_none() {
+    // Beside the right monitor's top: the area above it is no output.
+    assert!(outputs_under(rect(2000, 0, 300, 150), outputs()).is_empty());
+    assert!(outputs_under(rect(-800, 0, 600, 400), outputs()).is_empty());
+    // Above and to the left: off on both axes.
+    assert!(outputs_under(rect(-800, -600, 300, 200), outputs()).is_empty());
 }

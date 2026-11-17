@@ -35,7 +35,7 @@ use crate::settings_window;
 use crate::trade_http::TradeSite;
 use crate::trade_panel::{self, TradePanel};
 use crate::uinput::LetterKeys;
-use crate::{log_follow, poe1, steam, toplevels};
+use crate::{kwin_permission, log_follow, poe1, steam, toplevels};
 
 const APP_ID: &str = "io.github.nephritus.PoeOverlay";
 
@@ -51,6 +51,19 @@ pub fn run(game_pid: i32) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // Layer-shell is Wayland only; under X11 GDK would open a plain window.
+    gtk::gdk::set_allowed_backends("wayland");
+    if let Err(err) = gtk::init() {
+        eprintln!("poe-overlay: cannot start: no Wayland session ({err}). The game runs without the overlay.");
+        return ExitCode::FAILURE;
+    }
+    if !gtk4_layer_shell::is_supported() {
+        eprintln!(
+            "poe-overlay: the compositor lacks wlr-layer-shell, which the overlay needs to draw over the game \
+             (GNOME has none; KDE Plasma, Hyprland, sway and niri have it). The game runs without the overlay."
+        );
+        return ExitCode::FAILURE;
+    }
     let Some(pid) = Pid::from_raw(game_pid) else {
         eprintln!("poe-overlay: invalid game PID {game_pid}");
         return ExitCode::FAILURE;
@@ -144,7 +157,7 @@ fn activate(
     let grabber = grab_hotkeys(route_panel, config.hotkeys, action_sender);
     take_actions(actions, overlay.clone(), currency_panel, price_panel, copier, prices);
 
-    let changes = toplevels::watch();
+    let changes = toplevels::watch(kwin_permission::allow_this_program());
     glib::spawn_future_local(async move {
         while let Ok(visibility) = changes.recv().await {
             grabber.follow_game(matches!(visibility, Visibility::Shown { .. }));

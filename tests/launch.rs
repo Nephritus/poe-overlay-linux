@@ -22,9 +22,10 @@ impl Launch {
         cmd.arg("launch").arg("--").args(game);
         cmd.env("XDG_RUNTIME_DIR", self.runtime_dir.path());
         // The overlay it starts must leave the player's settings, saved
-        // progress and keys alone.
+        // progress, applications folder (KWin's entry) and keys alone.
         cmd.env("XDG_CONFIG_HOME", self.runtime_dir.path().join("config"))
             .env("XDG_STATE_HOME", self.runtime_dir.path().join("state"))
+            .env("XDG_DATA_HOME", self.runtime_dir.path().join("data"))
             .env_remove("DISPLAY");
         // The Wayland socket lives in the real runtime dir.
         if let (Some(dir), Some(display)) =
