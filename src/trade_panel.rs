@@ -38,7 +38,8 @@ pub struct TradePanel {
 }
 
 impl TradePanel {
-    /// Adds the (empty, hidden) Panel to `overlay`, centred on its output.
+    /// Adds the (empty, hidden) Panel to `overlay`, centred on its output
+    /// until the player drags it.
     pub fn new(overlay: &OverlaySurface, chat: ChatSender) -> TradePanel {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
         root.set_size_request(WIDTH, -1);

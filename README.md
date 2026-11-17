@@ -26,6 +26,8 @@ Set the game's launch options to:
 
 The overlay starts with the game, shows only while the game window is focused (on the game's monitor), and exits when the game exits. It takes keys from the game only while you type in one of its boxes (a Price Check minimum or maximum). Only one overlay runs at a time.
 
+To uncover something in the game, drag a Panel by its border: the pointer turns into a move cursor there. The game keeps the keyboard. A Panel stays wholly on screen and stays where you put it until the game restarts; Price Check then no longer moves to the half away from the pointer, and the Trade Request cards no longer re-centre.
+
 ### Cursor lock fix
 
 On a single-monitor desktop, Wine locks the cursor to a full-screen game window until focus moves away. Under Wayland that keeps the cursor out of the overlay's panels. Before each start, `launch` sets `"GrabPointer"="N"` for the PoE executables in the game's Wine prefix (`HKCU\Software\Wine\AppDefaults\<exe>\X11 Driver` in `user.reg`). It saves a one-time copy as `user.reg.poe-overlay-backup`. PoE's own "Confine mouse to window" option then has no effect.

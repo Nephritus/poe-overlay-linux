@@ -546,7 +546,8 @@ pub async fn price_check(copier: ItemCopier, overlay: OverlaySurface, panel: Pri
 }
 
 /// Away from the pointer: on the right half if the pointer is on the left
-/// half, else (or if unknown) on the left.
+/// half, else (or if unknown) on the left; where the player dragged it, if
+/// they did.
 fn place(overlay: &OverlaySurface, panel: &PricePanel, pointer_on_left: Option<bool>) {
     let (x, y) = match pointer_on_left {
         Some(true) => (f64::from(overlay.width()) / 2.0 + RIGHT_MARGIN, panel.left.1),

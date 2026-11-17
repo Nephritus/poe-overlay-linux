@@ -2,6 +2,7 @@
 //! that holds Panels. It takes the keyboard only while the player types in a
 //! Panel, shows only while the game is focused (on the game's output), and
 //! only shown Panels catch clicks; everything else passes through to the game.
+//! The player moves a Panel by dragging its border.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -50,7 +51,14 @@ pub enum PanelKind {
 struct Panel {
     widget: gtk::Widget,
     kind: PanelKind,
+    /// The player dragged it: it stays where they left it until the
+    /// Overlay restarts.
+    dragged: Cell<bool>,
 }
+
+/// How far in from a Panel's edge a press starts a drag: within its
+/// padding, clear of its controls.
+const BORDER_GRIP: f32 = 6.0;
 
 /// Widgets and the window are reference-counted; clones share the Overlay.
 #[derive(Clone)]
@@ -91,6 +99,7 @@ impl OverlaySurface {
 
         let surface = Self { window, fixed, panels: Rc::default(), typing: Rc::default(), no_window_focused: Rc::default() };
         surface.track_click_area();
+        surface.drag_by_border();
         surface
     }
 
@@ -100,7 +109,7 @@ impl OverlaySurface {
         let widget = widget.as_ref().clone();
         widget.set_visible(kind == PanelKind::Always);
         self.fixed.put(&widget, x, y);
-        self.panels.borrow_mut().push(Panel { widget, kind });
+        self.panels.borrow_mut().push(Panel { widget, kind, dragged: Cell::new(false) });
     }
 
     /// Shows or hides a `Toggled` Panel; returns whether it is shown now.
@@ -136,9 +145,80 @@ impl OverlaySurface {
         widget.as_ref().set_visible(false);
     }
 
-    /// Moves a Panel to `(x, y)` logical pixels from the output's top left.
+    /// Moves a Panel to `(x, y)` logical pixels from the output's top left,
+    /// unless the player has dragged it somewhere.
     pub fn move_panel(&self, widget: &impl IsA<gtk::Widget>, x: f64, y: f64) {
-        self.fixed.move_(widget, x, y);
+        let widget = widget.as_ref();
+        if !self.panels.borrow().iter().any(|panel| panel.widget == *widget && panel.dragged.get()) {
+            self.fixed.move_(widget, x, y);
+        }
+    }
+
+    /// The shown Panel whose border is at `(x, y)` (Overlay coordinates),
+    /// the one on top if they overlap, and its bounds.
+    fn border_at(&self, x: f64, y: f64) -> Option<(gtk::Widget, gtk::graphene::Rect)> {
+        let panels = self.panels.borrow();
+        let mut shown = panels.iter().rev().filter(|panel| panel.widget.is_visible());
+        shown.find_map(|panel| {
+            // Its bounds include padding and border; `Fixed::child_position`
+            // and the widget's width don't.
+            let b = panel.widget.compute_bounds(&self.fixed)?;
+            let (from_left, from_top) = (x as f32 - b.x(), y as f32 - b.y());
+            let nearest = from_left.min(from_top).min(b.width() - from_left).min(b.height() - from_top);
+            (0.0..BORDER_GRIP).contains(&nearest).then(|| (panel.widget.clone(), b))
+        })
+    }
+
+    /// The output's size; the window's grows past it when a Panel sticks out.
+    fn output_size(&self) -> Option<(f64, f64)> {
+        let surface = self.window.surface()?;
+        let geometry = surface.display().monitor_at_surface(&surface)?.geometry();
+        Some((f64::from(geometry.width()), f64::from(geometry.height())))
+    }
+
+    /// Pressing a Panel's border and dragging moves it; the pointer shows a
+    /// move cursor over borders. Presses elsewhere go to the Panel as usual.
+    fn drag_by_border(&self) {
+        let drag = gtk::GestureDrag::new();
+        drag.set_propagation_phase(gtk::PropagationPhase::Capture);
+        // The Panel being dragged and its bounds when the drag began.
+        let dragging = Rc::new(RefCell::new(None::<(gtk::Widget, gtk::graphene::Rect)>));
+        drag.connect_drag_begin({
+            let (surface, dragging) = (self.clone(), dragging.clone());
+            move |drag, x, y| {
+                let found = surface.border_at(x, y);
+                drag.set_state(if found.is_some() { gtk::EventSequenceState::Claimed } else { gtk::EventSequenceState::Denied });
+                *dragging.borrow_mut() = found;
+            }
+        });
+        drag.connect_drag_update({
+            let (surface, dragging) = (self.clone(), dragging.clone());
+            move |_, dx, dy| {
+                let Some((widget, start)) = &*dragging.borrow() else { return };
+                let Some((width, height)) = surface.output_size() else { return };
+                // Wholly on the output: a Panel sticking out would make the
+                // Overlay larger than the output.
+                let (right, bottom) = ((width - f64::from(start.width())).max(0.0), (height - f64::from(start.height())).max(0.0));
+                let x = (f64::from(start.x()) + dx).clamp(0.0, right);
+                let y = (f64::from(start.y()) + dy).clamp(0.0, bottom);
+                surface.fixed.move_(widget, x, y);
+                if let Some(panel) = surface.panels.borrow().iter().find(|panel| panel.widget == *widget) {
+                    panel.dragged.set(true);
+                }
+            }
+        });
+        drag.connect_drag_end(move |_, _, _| {
+            dragging.borrow_mut().take();
+        });
+        self.fixed.add_controller(drag);
+
+        let hover = gtk::EventControllerMotion::new();
+        hover.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let surface = self.clone();
+        hover.connect_motion(move |_, x, y| {
+            surface.fixed.set_cursor_from_name(surface.border_at(x, y).is_some().then_some("move"));
+        });
+        self.fixed.add_controller(hover);
     }
 
     /// The output's width in logical pixels (0 before it is first shown).
