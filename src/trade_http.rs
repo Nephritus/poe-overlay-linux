@@ -27,7 +27,12 @@ impl TradeSite {
 impl TradeHttp for TradeSite {
     fn send(&self, url: &str, body: Option<&str>, login: Option<&Login>) -> Result<TradeResponse, String> {
         let sent = match body {
-            Some(body) => with_login(self.0.post(url), login).header("Content-Type", "application/json").send(body),
+            // As the trade site's own page asks; travel requests need them.
+            Some(body) => with_login(self.0.post(url), login)
+                .header("Content-Type", "application/json")
+                .header("X-Requested-With", "XMLHttpRequest")
+                .header("Origin", "https://www.pathofexile.com")
+                .send(body),
             None => with_login(self.0.get(url), login).call(),
         };
         let mut response = sent.map_err(|err| err.to_string())?;

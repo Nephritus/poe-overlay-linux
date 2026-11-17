@@ -10,7 +10,6 @@ use rustix::process::{Pid, PidfdFlags, pidfd_open};
 
 use std::cell::RefCell;
 use std::path::PathBuf;
-use std::process::Command;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -32,6 +31,7 @@ use crate::poe1::trade_search::TradeSource;
 use crate::price_panel::{self, PricePanel};
 use crate::route_panel::{self, Notice, RoutePanel};
 use crate::running::{Action, RunningOverlay};
+use crate::settings_window;
 use crate::trade_http::TradeSite;
 use crate::trade_panel::{self, TradePanel};
 use crate::uinput::LetterKeys;
@@ -124,7 +124,8 @@ fn activate(
     };
     // Under the Toggled Panels, which the player opens on purpose.
     let letters = letter_keys();
-    let trade_panel = TradePanel::new(&overlay, ChatSender::spawn(letters));
+    let chat = ChatSender::spawn(letters);
+    let trade_panel = TradePanel::new(&overlay, chat.clone());
     // The Toggled Panels take turns in one spot next to the Route Panel.
     let currency_panel = CurrencyPanel::new();
     overlay.add_panel(currency_panel.widget(), TOGGLED_PANEL_X, TOGGLED_PANEL_Y, PanelKind::Toggled);
@@ -132,7 +133,7 @@ fn activate(
     if config.trade.login {
         trades.lock().unwrap().log_in(browser_login());
     }
-    let price_panel = PricePanel::new((TOGGLED_PANEL_X, TOGGLED_PANEL_Y), trades.clone(), &overlay);
+    let price_panel = PricePanel::new((TOGGLED_PANEL_X, TOGGLED_PANEL_Y), trades.clone(), chat, &overlay);
     overlay.add_panel(price_panel.widget(), TOGGLED_PANEL_X, TOGGLED_PANEL_Y, PanelKind::Toggled);
     let held = config.hotkeys.get(Action::PriceCheck).map(|hotkey| hotkey.modifiers().collect()).unwrap_or_default();
     let copier = ItemCopier::spawn(letters, held);
@@ -361,20 +362,10 @@ fn take_actions(
                     let check = price_panel::price_check(copier.clone(), overlay.clone(), price.clone(), prices.clone());
                     glib::spawn_future_local(check);
                 }
-                Action::Settings => open_settings(),
+                Action::Settings => settings_window::open(),
             }
         }
     });
-}
-
-/// Starts `poe-overlay settings`: a window of its own, outside the overlay.
-fn open_settings() {
-    let started = std::env::current_exe().and_then(|program| Command::new(program).arg("settings").spawn());
-    match started {
-        // Reaped on a thread, so the overlay never waits for the window.
-        Ok(mut window) => drop(std::thread::spawn(move || window.wait())),
-        Err(err) => eprintln!("poe-overlay: cannot open the settings window: {err}"),
-    }
 }
 
 /// The evdev codes of the keys that type `c` and `v` in the player's

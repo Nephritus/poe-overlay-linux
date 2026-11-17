@@ -9,7 +9,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::login::{BrowserLogin, Login, ReadBrowsers};
 use super::prices::encode;
@@ -61,14 +61,84 @@ pub struct Listing {
     pub kind: ListingKind,
     /// An in-person seller is online but away.
     pub afk: bool,
+    /// For an in-person Listing: the message to whisper its seller, as the
+    /// trade site words it (`@Seller Hi, I would like to buy your…`).
+    pub whisper: Option<String>,
+    /// For an instant buyout fetched logged in: the way to its seller's
+    /// hideout.
+    pub hideout: Option<HideoutToken>,
+}
+
+/// What the trade site needs to send the player to a seller's hideout; it
+/// expires about 5 minutes after the fetch. A secret: `Debug` leaves it out.
+#[derive(Clone, PartialEq)]
+pub struct HideoutToken {
+    token: String,
+    /// Seconds since 1970, from the token itself.
+    expires: Option<i64>,
+}
+
+impl fmt::Debug for HideoutToken {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("HideoutToken").field("expires", &self.expires).finish_non_exhaustive()
+    }
+}
+
+impl HideoutToken {
+    fn new(token: String) -> HideoutToken {
+        let expires = token.split('.').nth(1).and_then(base64url).and_then(|claims| {
+            #[derive(Deserialize)]
+            struct Claims {
+                exp: i64,
+            }
+            serde_json::from_slice::<Claims>(&claims).ok().map(|claims| claims.exp)
+        });
+        HideoutToken { token, expires }
+    }
+}
+
+/// Decodes unpadded base64url (a JSON Web Token's parts).
+fn base64url(text: &str) -> Option<Vec<u8>> {
+    let value = |byte: u8| match byte {
+        b'A'..=b'Z' => Some(byte - b'A'),
+        b'a'..=b'z' => Some(byte - b'a' + 26),
+        b'0'..=b'9' => Some(byte - b'0' + 52),
+        b'-' => Some(62),
+        b'_' => Some(63),
+        _ => None,
+    };
+    let mut out = Vec::with_capacity(text.len() * 3 / 4);
+    let (mut bits, mut held) = (0u32, 0);
+    for byte in text.bytes() {
+        bits = bits << 6 | u32::from(value(byte)?);
+        held += 6;
+        if held >= 8 {
+            held -= 8;
+            out.push((bits >> held) as u8);
+        }
+    }
+    Some(out)
+}
+
+/// What the trade site did with a Travel to Hideout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Travel {
+    /// The game teleports the player.
+    Teleporting,
+    /// Others are buying it too; travelling again with `anyway` goes.
+    InDemand,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TradeError {
-    /// A rate limit is reached; searching works again after `wait`.
+    /// A rate limit is reached; the site may be asked again after `wait`.
     Limited { wait: Duration },
     /// The site answered 403 (Cloudflare or GGG); not asked again for `wait`.
     Refused { wait: Duration },
+    /// Travelling needs the player's login; nothing was sent.
+    LoggedOut,
+    /// The Listing's way to the hideout has expired; nothing was sent.
+    Expired,
     Failed(String),
 }
 
@@ -81,12 +151,14 @@ impl From<String> for TradeError {
 impl fmt::Display for TradeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            TradeError::Limited { wait } => write!(f, "The trade site's rate limit is reached; you can search again in {}.", duration(*wait)),
+            TradeError::Limited { wait } => write!(f, "The trade site's rate limit is reached; try again in {}.", duration(*wait)),
             TradeError::Refused { wait } => write!(
                 f,
                 "The trade site refused the search (HTTP 403); you can search again in {}. Open it on the trade site meanwhile.",
                 duration(*wait)
             ),
+            TradeError::LoggedOut => f.write_str("Travelling needs your trade site login: Log in in the Settings window."),
+            TradeError::Expired => f.write_str("This Listing is too old to travel to: press Search for a fresh one."),
             TradeError::Failed(message) => f.write_str(message),
         }
     }
@@ -109,17 +181,18 @@ pub fn age(seconds: i64) -> String {
     }
 }
 
-/// Searches the trade site, one endpoint's rate limits each for searches
-/// and fetches.
+/// Searches the trade site, one endpoint's rate limits each for searches,
+/// fetches and travels.
 pub struct TradeSource<H> {
     http: H,
     search_limits: RateLimits,
     fetch_limits: RateLimits,
+    travel_limits: RateLimits,
     refused_until: Option<Instant>,
     /// The last search (league and query), what the site answered, when.
     searched: Option<(String, Instant, Search)>,
-    /// The listings fetched for it.
-    found: Option<Arc<Listings>>,
+    /// The listings fetched for it, and whether the fetch carried a login.
+    found: Option<(Arc<Listings>, bool)>,
     /// Set while the player is logged in through their browser.
     login: Option<BrowserLogin>,
 }
@@ -134,7 +207,16 @@ struct Search {
 
 impl<H: TradeHttp> TradeSource<H> {
     pub fn new(http: H) -> Self {
-        Self { http, search_limits: RateLimits::default(), fetch_limits: RateLimits::default(), refused_until: None, searched: None, found: None, login: None }
+        Self {
+            http,
+            search_limits: RateLimits::default(),
+            fetch_limits: RateLimits::default(),
+            travel_limits: RateLimits::default(),
+            refused_until: None,
+            searched: None,
+            found: None,
+            login: None,
+        }
     }
 
     /// Searches from now on carry the login `read` finds in the browsers.
@@ -147,9 +229,15 @@ impl<H: TradeHttp> TradeSource<H> {
         self.login = None;
     }
 
+    /// Whether requests now carry a login.
+    fn logged_in(&mut self, now: Instant) -> bool {
+        self.login.as_mut().and_then(|login| login.current(now)).is_some()
+    }
+
     /// The cheapest listings like `query` in `league`. The same search
     /// within 5 minutes reuses the last answer, also when only its fetch was
-    /// held back by a rate limit.
+    /// held back by a rate limit; its listings are fetched again when the
+    /// login changed since (it adds the ways to travel).
     pub fn listings(&mut self, query: &TradeQuery, league: &str, now: Instant) -> Result<Arc<Listings>, TradeError> {
         let body = query.to_json();
         let key = format!("{league}\n{body}");
@@ -162,8 +250,11 @@ impl<H: TradeHttp> TradeSource<H> {
             let url = format!("{TRADE_SITE}/api/trade/search/{}", encode(league));
             let search = self.request(Endpoint::Search, &url, Some(&body), now)?;
             self.searched = Some((key, now, search));
-        } else if let Some(found) = &self.found {
-            return Ok(found.clone());
+        } else if let Some((found, with_login)) = &self.found {
+            let found = found.clone();
+            if *with_login == self.logged_in(now) {
+                return Ok(found);
+            }
         }
         let (_, _, search) = self.searched.as_ref().expect("searched above");
         let (total, ids, query_id) = (search.total, search.result[..search.result.len().min(SHOWN)].join(","), search.id.clone());
@@ -175,8 +266,44 @@ impl<H: TradeHttp> TradeSource<H> {
             fetched.result.into_iter().flatten().map(Listing::from).collect()
         };
         let found = Arc::new(Listings { total, cheapest });
-        self.found = Some(found.clone());
+        let with_login = self.logged_in(now);
+        self.found = Some((found.clone(), with_login));
         Ok(found)
+    }
+
+    /// Asks the trade site to send the player to `hideout`: one request,
+    /// with the login. `anyway` travels to an item in demand (the site's
+    /// `continue`). `unix_now` (seconds since 1970) tells an expired way,
+    /// which isn't sent; the same search then fetches its listings again.
+    pub fn travel(&mut self, hideout: &HideoutToken, anyway: bool, now: Instant, unix_now: i64) -> Result<Travel, TradeError> {
+        if hideout.expires.is_some_and(|expires| unix_now >= expires) {
+            self.found = None;
+            return Err(TradeError::Expired);
+        }
+        if !self.logged_in(now) {
+            return Err(TradeError::LoggedOut);
+        }
+        if let Some(until) = self.refused_until.filter(|until| *until > now) {
+            return Err(TradeError::Refused { wait: until - now });
+        }
+        #[derive(Serialize)]
+        struct Ask<'t> {
+            token: &'t str,
+            #[serde(rename = "continue", skip_serializing_if = "std::ops::Not::not")]
+            anyway: bool,
+        }
+        #[derive(Deserialize)]
+        struct Answer {
+            success: Option<bool>,
+            error: Option<Message>,
+        }
+        let body = serde_json::to_string(&Ask { token: &hideout.token, anyway }).expect("plain JSON");
+        let answer: Answer = self.request(Endpoint::Travel, &format!("{TRADE_SITE}/api/trade/whisper"), Some(&body), now)?;
+        match answer {
+            Answer { error: Some(error), .. } => Err(TradeError::Failed(Endpoint::Travel.failed(&error.message))),
+            Answer { success: Some(false), .. } => Ok(Travel::InDemand),
+            Answer { .. } => Ok(Travel::Teleporting),
+        }
     }
 
     /// Sends one request within `endpoint`'s limits and reads its answer.
@@ -184,6 +311,7 @@ impl<H: TradeHttp> TradeSource<H> {
         let limits = match endpoint {
             Endpoint::Search => &mut self.search_limits,
             Endpoint::Fetch => &mut self.fetch_limits,
+            Endpoint::Travel => &mut self.travel_limits,
         };
         if let Some(until) = limits.wait_until(now) {
             return Err(TradeError::Limited { wait: until - now });
@@ -195,8 +323,11 @@ impl<H: TradeHttp> TradeSource<H> {
         // Waits the site states count from its answer, which may take seconds.
         let answered = now + asked.elapsed();
         limits.update(|name| response.header(name), answered);
+        let reason = || serde_json::from_str::<Failure>(&response.body).ok().map(|failure| failure.error.message);
         match response.status {
             200 => serde_json::from_str(&response.body).map_err(|err| TradeError::Failed(format!("The trade site sent an unexpected answer ({err})."))),
+            // A refused travel says nothing about searching.
+            403 if matches!(endpoint, Endpoint::Travel) => Err(TradeError::Failed(endpoint.failed(&reason().unwrap_or_else(|| "HTTP 403".to_owned())))),
             403 => {
                 self.refused_until = Some(answered + REFUSED_FOR);
                 Err(TradeError::Refused { wait: REFUSED_FOR })
@@ -209,26 +340,38 @@ impl<H: TradeHttp> TradeSource<H> {
                 let until = limits.wait_until(answered).unwrap_or(answered);
                 Err(TradeError::Limited { wait: until - answered })
             }
-            status => {
-                #[derive(Deserialize)]
-                struct Failure {
-                    error: Message,
-                }
-                #[derive(Deserialize)]
-                struct Message {
-                    message: String,
-                }
-                let message = serde_json::from_str::<Failure>(&response.body).map_or_else(|_| format!("HTTP {status}"), |failure| failure.error.message);
-                Err(TradeError::Failed(format!("The trade site didn't search: {message}.")))
-            }
+            status => Err(TradeError::Failed(endpoint.failed(&reason().unwrap_or_else(|| format!("HTTP {status}"))))),
         }
     }
+}
+
+/// The trade site's `{"error": {"message": …}}`.
+#[derive(Deserialize)]
+struct Failure {
+    error: Message,
+}
+
+#[derive(Deserialize)]
+struct Message {
+    message: String,
 }
 
 #[derive(Clone, Copy)]
 enum Endpoint {
     Search,
     Fetch,
+    /// Travel to Hideout (the site's `whisper` endpoint).
+    Travel,
+}
+
+impl Endpoint {
+    /// What the site refusing it for `reason` means.
+    fn failed(self, reason: &str) -> String {
+        match self {
+            Endpoint::Search | Endpoint::Fetch => format!("The trade site didn't search: {reason}."),
+            Endpoint::Travel => format!("The trade site didn't send you there: {reason}."),
+        }
+    }
 }
 
 /// A fetch answer; an entry is `null` for a listing removed since the search.
@@ -249,6 +392,9 @@ struct FetchedListing {
     account: FetchedAccount,
     /// Gold the buyer pays on an instant buyout.
     fee: Option<f64>,
+    whisper: Option<String>,
+    /// Only on an instant buyout fetched logged in.
+    hideout_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -277,8 +423,10 @@ impl From<FetchedItem> for Listing {
             price: listing.price.map(|price| (price.amount, price.currency)),
             listed: listing.indexed.as_deref().and_then(unix_seconds),
             kind,
-            // An instant buyout needs no one at the keyboard.
+            // An instant buyout needs no one at the keyboard, nor a whisper.
             afk: kind == ListingKind::InPerson && away,
+            whisper: listing.whisper.filter(|_| kind == ListingKind::InPerson),
+            hideout: listing.hideout_token.filter(|_| kind == ListingKind::InstantBuyout).map(HideoutToken::new),
         }
     }
 }

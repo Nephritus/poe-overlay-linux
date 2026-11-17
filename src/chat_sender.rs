@@ -1,15 +1,21 @@
-//! Chat lines from Trade Request cards, sent on a thread of its own: the
-//! virtual keyboard and the clipboard block, and after a line is sent this
-//! thread hands the player's clipboard (put back) to whoever pastes it.
+//! Chat lines from Panel buttons (Trade Request cards, Price Check
+//! whispers), sent on a thread of its own: the virtual keyboard and the
+//! clipboard block, and after a line is sent this thread hands the player's
+//! clipboard (put back) to whoever pastes it.
 
 use std::os::fd::{AsFd, OwnedFd};
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::clipboard::DataControlClipboard;
+use crate::overlay_surface::OverlaySurface;
 use crate::poe1::chat::{ChatError, send_chat};
 use crate::uinput::{LetterKeys, VirtualKeyboard};
 
 type Request = (String, async_channel::Sender<Result<(), ChatError>>);
+
+/// After the Overlay gives the keyboard back, until the game has it again.
+const KEYS_BACK: Duration = Duration::from_millis(200);
 
 #[derive(Clone)]
 pub struct ChatSender {
@@ -67,5 +73,18 @@ impl ChatSender {
         // A full pipe already wakes the thread.
         let _ = rustix::io::write(&*self.wake, &[1]);
         result.recv().await.unwrap_or_else(|_| gone())
+    }
+
+    /// Sends `line` from a click in `overlay`: keys typed in a Price Check
+    /// box go back to the game first, and nothing is sent unless the game
+    /// is in front. The error says why it wasn't sent.
+    pub async fn send_to_game(&self, overlay: &OverlaySurface, line: String) -> Result<(), String> {
+        if overlay.release_keyboard() {
+            gtk::glib::timeout_future(KEYS_BACK).await;
+        }
+        if !overlay.game_focused() {
+            return Err("Not sent: the game isn't in front.".to_owned());
+        }
+        self.send(line).await.map_err(|err| err.to_string())
     }
 }

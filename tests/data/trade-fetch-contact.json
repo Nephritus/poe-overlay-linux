@@ -1,0 +1,81 @@
+{
+ "result": [
+  {
+   "listing": {
+    "indexed": "2026-11-17T14:40:51Z",
+    "price": {
+     "type": "~price",
+     "amount": 2,
+     "currency": "chaos"
+    },
+    "account": {
+     "online": {
+      "league": "Covens"
+     }
+    },
+    "whisper": "@Seller_One Hi, I would like to buy your Tabula Rasa Simple Robe listed for 2 chaos in Covens (stash tab \"~price 2 chaos\"; position: left 16, top 3)"
+   }
+  },
+  {
+   "listing": {
+    "indexed": "2026-11-15T18:54:08Z",
+    "price": {
+     "type": "~b/o",
+     "amount": 2,
+     "currency": "chaos"
+    },
+    "account": {
+     "online": {
+      "league": "Covens"
+     }
+    },
+    "whisper": "@Seller_Two Здравствуйте, хочу купить у вас Табула раса Матерчатая безрукавка за 2 chaos в лиге Covens (секция \"~b/o 2 chaos\"; позиция: 1 столбец, 14 ряд)"
+   }
+  },
+  {
+   "listing": {
+    "indexed": "2026-11-17T14:55:46Z",
+    "price": {
+     "type": "~b/o",
+     "amount": 5,
+     "currency": "chaos"
+    },
+    "account": {
+     "online": null
+    },
+    "fee": 2800,
+    "hideout_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJ0ZXN0IiwiZCI6Inh4Pz8-Pz8_IiwiZXhwIjoxNzk0OTI3NjY1fQ.c2lnbmF0dXJl"
+   }
+  },
+  {
+   "listing": {
+    "indexed": "2026-11-17T14:56:01Z",
+    "price": {
+     "type": "~b/o",
+     "amount": 8,
+     "currency": "chaos"
+    },
+    "account": {
+     "online": null
+    },
+    "fee": 2800,
+    "hideout_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJ0ZXN0IiwiZCI6Inh4Pz8-Pz8_IiwiZXhwIjoxNzk0OTI3NjY1fQ.c2lnbmF0dXJl"
+   }
+  },
+  {
+   "listing": {
+    "indexed": "2026-11-17T14:56:18Z",
+    "price": {
+     "type": "~b/o",
+     "amount": 5,
+     "currency": "chaos"
+    },
+    "account": {
+     "online": null
+    },
+    "fee": 2800,
+    "whisper": "@Seller_Three Hi, I would like to buy your Tabula Rasa Simple Robe listed for 5 chaos in Covens (stash tab \"?\"; position: left 1, top 6)"
+   }
+  }
+ ]
+}

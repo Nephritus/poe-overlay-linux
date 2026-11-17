@@ -3,8 +3,6 @@
 //! nothing in the log removes them, and a card's buttons send one chat line
 //! per click, never on a log event.
 
-use std::time::Duration;
-
 use gtk::prelude::*;
 
 use crate::chat_sender::ChatSender;
@@ -25,10 +23,6 @@ pub const CSS: &str = "
 const MAX_CARDS: usize = 5;
 const WIDTH: i32 = 320;
 const TOP: f64 = 60.0;
-
-/// After the Overlay gives the keyboard back, until the game has it again.
-const KEYS_BACK: Duration = Duration::from_millis(200);
-const NOT_IN_FRONT: &str = "Not sent: the game isn't in front.";
 
 #[derive(Clone)]
 pub struct TradePanel {
@@ -95,11 +89,7 @@ impl TradePanel {
                 let (line, chat, overlay, status, button) = (line.clone(), chat.clone(), overlay.clone(), status.clone(), button.clone());
                 gtk::glib::spawn_future_local(async move {
                     button.set_sensitive(false);
-                    // Keys typed in a Price Check box go back to the game first.
-                    if overlay.release_keyboard() {
-                        gtk::glib::timeout_future(KEYS_BACK).await;
-                    }
-                    let sent = if overlay.game_focused() { chat.send(line).await.map_err(|err| err.to_string()) } else { Err(NOT_IN_FRONT.to_owned()) };
+                    let sent = chat.send_to_game(&overlay, line).await;
                     button.set_sensitive(true);
                     status.set_visible(sent.is_err());
                     if let Err(err) = sent {

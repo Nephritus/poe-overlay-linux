@@ -3,7 +3,7 @@
 //! Opened by the `price-check` Action, on the half of the screen away from
 //! the pointer.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fmt::Write as _;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -12,6 +12,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use gtk::prelude::*;
 
+use crate::chat_sender::ChatSender;
 use crate::item_copier::ItemCopier;
 use crate::overlay_surface::OverlaySurface;
 use crate::panel_prices::{PriceTable, Prices, Trades, ask, clear};
@@ -19,7 +20,8 @@ use crate::poe1::item::{self, Item, ItemKind};
 use crate::poe1::item_copy::CopyError;
 use crate::poe1::prices::ItemPrices;
 use crate::poe1::trade::{ListingKind, NotANumber, Rarity, TradeData, TradeQuery, bound};
-use crate::poe1::trade_search::{Listings, TradeError, age};
+use crate::poe1::trade_search::{Listing, Listings, TradeError, Travel, age};
+use crate::settings_window;
 
 const WIDTH: i32 = 320;
 
@@ -83,12 +85,14 @@ pub struct PricePanel {
     /// Counts presses and Searches, so a slow copy or answer for an earlier
     /// one is dropped; shared with search threads, which skip a stale one.
     presses: Arc<AtomicU64>,
+    /// Whispers sellers from in-person Listings.
+    chat: ChatSender,
 }
 
 impl PricePanel {
     /// `left`: where it goes on the left half, as passed to
     /// [`OverlaySurface::add_panel`].
-    pub fn new(left: (f64, f64), trades: Trades, overlay: &OverlaySurface) -> Self {
+    pub fn new(left: (f64, f64), trades: Trades, chat: ChatSender, overlay: &OverlaySurface) -> Self {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
         root.add_css_class("panel");
         root.set_size_request(WIDTH, -1);
@@ -157,6 +161,7 @@ impl PricePanel {
             listings,
             shown: Rc::default(),
             trades,
+            chat,
             overlay: overlay.clone(),
             left,
             text: Rc::default(),
@@ -374,12 +379,13 @@ impl PricePanel {
         self.presses.load(Ordering::Relaxed) == check
     }
 
-    /// The cheapest listings: price, how long ago it was listed, and how it is
-    /// bought (or that the seller is away).
+    /// The cheapest listings: price, how long ago it was listed, how it is
+    /// bought (or that the seller is away), and a button to contact its
+    /// seller, with a line under the row for what came of it.
     fn show_listings(&self, found: &Listings) {
         clear(&self.listings);
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_secs() as i64);
-        for (row, listing) in (0..).zip(&found.cheapest) {
+        let now = unix_now();
+        for (row, listing) in (0..).step_by(2).zip(&found.cheapest) {
             let price = listing.price.as_ref().map_or_else(|| "no price".to_owned(), |(amount, currency)| format!("{amount} {currency}"));
             let listed = listing.listed.map(|listed| age(now - listed)).unwrap_or_default();
             let sale = match listing.kind {
@@ -389,10 +395,15 @@ impl PricePanel {
             };
             let cells = [(price, "panel-name", 0.0), (listed, "panel-status", 1.0), (sale.to_owned(), "panel-status", 0.0)];
             for (column, (text, class, xalign)) in (0..).zip(cells) {
-                let cell = gtk::Label::builder().label(&text).xalign(xalign).build();
+                let cell = gtk::Label::builder().label(&text).xalign(xalign).valign(gtk::Align::Center).build();
                 cell.add_css_class(class);
                 self.listings.attach(&cell, column, row, 1, 1);
             }
+            let outcome = gtk::Label::builder().xalign(0.0).wrap(true).max_width_chars(1).visible(false).build();
+            if let Some(button) = self.contact_button(listing, &outcome) {
+                self.listings.attach(&button, 3, row, 1, 1);
+            }
+            self.listings.attach(&outcome, 0, row + 1, 4, 1);
         }
         self.listings.set_visible(!found.cheapest.is_empty());
         let status = match found.total {
@@ -400,6 +411,67 @@ impl PricePanel {
             total => format!("Trade site · {total} listed, cheapest first"),
         };
         self.set_found(&status, false);
+    }
+
+    /// Whisper for an in-person Listing; Travel to its seller's hideout for
+    /// an instant buyout, or Log in (opening Settings) when it was fetched
+    /// logged out. One click, one whisper or one request; `outcome` says
+    /// what came of it.
+    fn contact_button(&self, listing: &Listing, outcome: &gtk::Label) -> Option<gtk::Button> {
+        // Pointer-only: clicking it leaves the keyboard with the game.
+        let button = gtk::Button::builder().focusable(false).focus_on_click(false).valign(gtk::Align::Center).build();
+        button.add_css_class("panel-choice");
+        let outcome = outcome.clone();
+        if let Some(whisper) = &listing.whisper {
+            button.set_label("Whisper");
+            button.set_tooltip_text(Some("Whisper the seller in game"));
+            let (chat, overlay, whisper) = (self.chat.clone(), self.overlay.clone(), whisper.clone());
+            button.connect_clicked(move |button| {
+                let (chat, overlay, whisper, button, outcome) = (chat.clone(), overlay.clone(), whisper.clone(), button.clone(), outcome.clone());
+                gtk::glib::spawn_future_local(async move {
+                    button.set_sensitive(false);
+                    let sent = chat.send_to_game(&overlay, whisper).await;
+                    button.set_sensitive(true);
+                    show_outcome(&outcome, sent.err().as_deref(), true);
+                });
+            });
+        } else if let Some(token) = &listing.hideout {
+            button.set_label("Travel to Hideout");
+            // After "in demand", the next click travels anyway.
+            let anyway = Rc::new(Cell::new(false));
+            let (trades, token) = (self.trades.clone(), Arc::new(token.clone()));
+            button.connect_clicked(move |button| {
+                let (trades, token, anyway, button, outcome) = (trades.clone(), token.clone(), anyway.clone(), button.clone(), outcome.clone());
+                gtk::glib::spawn_future_local(async move {
+                    button.set_sensitive(false);
+                    let go_anyway = anyway.get();
+                    let unix_now = unix_now();
+                    let travelled = ask(&trades, move |source| source.travel(&token, go_anyway, Instant::now(), unix_now)).await;
+                    button.set_sensitive(true);
+                    anyway.set(travelled == Ok(Travel::InDemand));
+                    match travelled {
+                        Ok(Travel::Teleporting) => show_outcome(&outcome, Some("Teleporting…"), false),
+                        Ok(Travel::InDemand) => show_outcome(&outcome, Some("In demand: others are buying it too. Click again to travel anyway."), true),
+                        Err(err) => {
+                            if err == TradeError::LoggedOut {
+                                settings_window::open();
+                            }
+                            show_outcome(&outcome, Some(&err.to_string()), true);
+                        }
+                    }
+                });
+            });
+        } else if listing.kind == ListingKind::InstantBuyout {
+            button.set_label("Log in");
+            button.set_tooltip_text(Some("Travel to Hideout needs your trade site login"));
+            button.connect_clicked(move |_| {
+                settings_window::open();
+                show_outcome(&outcome, Some("Log in on the trade site in the Settings window, then press Search to travel."), false);
+            });
+        } else {
+            return None;
+        }
+        Some(button)
     }
 
     fn set_status(&self, text: &str, error: bool) {
@@ -414,6 +486,19 @@ impl PricePanel {
 fn set_label(label: &gtk::Label, text: &str, error: bool) {
     label.set_label(text);
     label.set_css_classes(&[if error { "panel-error" } else { "panel-status" }]);
+}
+
+/// Shows `text` under a Listing, or hides the line for `None`.
+fn show_outcome(label: &gtk::Label, text: Option<&str>, error: bool) {
+    label.set_visible(text.is_some());
+    if let Some(text) = text {
+        set_label(label, text, error);
+    }
+}
+
+/// Seconds since 1970.
+fn unix_now() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_secs() as i64)
 }
 
 /// The rarities the player picks from, as the search takes them.

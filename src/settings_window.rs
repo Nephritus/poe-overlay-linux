@@ -34,6 +34,16 @@ pub fn run() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Starts `poe-overlay settings` from the overlay: a window of its own.
+pub fn open() {
+    let started = std::env::current_exe().and_then(|program| std::process::Command::new(program).arg("settings").spawn());
+    match started {
+        // Reaped on a thread, so the overlay never waits for the window.
+        Ok(mut window) => drop(std::thread::spawn(move || window.wait())),
+        Err(err) => eprintln!("poe-overlay: cannot open the settings window: {err}"),
+    }
+}
+
 /// The league dropdown's entries; `None` is poe.ninja's first league.
 type Leagues = Rc<RefCell<Vec<Option<Arc<str>>>>>;
 
