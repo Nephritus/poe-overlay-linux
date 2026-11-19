@@ -20,6 +20,8 @@ jobs:
         with:
           name: dist
           path: dist/
+          # dist/aur/.SRCINFO
+          include-hidden-files: true
       - name: Attach them to the release
         if: startsWith(github.ref, 'refs/tags/')
         env:
@@ -27,4 +29,6 @@ jobs:
         run: |
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
           [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "tag $GITHUB_REF_NAME isn't v$version from Cargo.toml"; exit 1; }
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes dist/*
+          # The files only: dist/aur/ goes to the AUR, not the release.
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
+            dist/*.tar.gz dist/*.deb dist/*.rpm dist/*.AppImage dist/SHA256SUMS
