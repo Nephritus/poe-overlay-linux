@@ -238,3 +238,77 @@ fn registry_fix_joins_an_existing_section_for_the_game() {
     );
     assert_eq!(after.matches("PathOfExileSteam.exe\\\\X11 Driver]").count(), 1);
 }
+
+/// What the AppImage's AppRun hands the program: the environment it was
+/// started with, NUL-separated and base64-encoded, as `base64 -w0
+/// /proc/$$/environ` prints it.
+fn appimage_snapshot(vars: &[&str]) -> String {
+    let mut raw = Vec::new();
+    for var in vars {
+        raw.extend_from_slice(var.as_bytes());
+        raw.push(0);
+    }
+    let mut base64 = Command::new("base64").arg("-w0").stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn().unwrap();
+    std::io::Write::write_all(&mut base64.stdin.take().unwrap(), &raw).unwrap();
+    String::from_utf8(base64.wait_with_output().unwrap().stdout).unwrap()
+}
+
+/// Sorted variables of `env -0` output.
+fn environ_list(raw: &[u8]) -> Vec<String> {
+    let mut vars: Vec<String> = raw.split(|b| *b == 0).filter(|v| !v.is_empty()).map(|v| String::from_utf8_lossy(v).into_owned()).collect();
+    vars.sort();
+    vars
+}
+
+#[test]
+fn from_the_appimage_the_game_gets_the_environment_steam_gave_it() {
+    let launch = Launch::new();
+    let dir = tempfile::tempdir().unwrap();
+    // Stands in for the AppImage file: records how it was started.
+    let appimage = dir.path().join("poe-overlay.AppImage");
+    fs::write(&appimage, format!("#!/bin/sh\necho \"$@\" > {0}/appimage-args\nenv -0 > {0}/appimage-env\n", dir.path().display())).unwrap();
+    fs::set_permissions(&appimage, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let steam = [
+        "PATH=/usr/bin:/bin",
+        "LD_PRELOAD=/nonexistent/gameoverlayrenderer.so",
+        "XDG_DATA_DIRS=/usr/local/share:/usr/share",
+        "STEAM_COMPAT_DATA_PATH=/nonexistent/compatdata/238960",
+        "SPACED=a value\nover two lines",
+        // Encodes to base64's `+` and `/`.
+        "SYMBOLS=~~~???~~~???",
+    ];
+    // The AppImage runtime adds these before AppRun takes its snapshot.
+    let runtime = [
+        "APPIMAGE=/home/exile/poe-overlay.AppImage",
+        "APPDIR=/tmp/.mount_poe-oAbC12",
+        "APPOFFSET=1504648",
+        "ARGV0=poe-overlay.AppImage",
+        "OWD=/home/exile",
+        "URUNTIME=/home/exile/poe-overlay.AppImage",
+        "URUNTIME_DIR=/home/exile",
+    ];
+    let snapshot = appimage_snapshot(&[&steam[..], &runtime[..]].concat());
+
+    // The game prints its environment.
+    let out = launch
+        .command(&["/usr/bin/env", "-0"])
+        .env("POE_OVERLAY_HOST_ENV", &snapshot)
+        .env("APPIMAGE", &appimage)
+        // What the bundled libraries need, which the game must not get.
+        .env("GTK_PATH", "/tmp/.mount_poe-oAbC12/lib/gtk-4.0")
+        .env("XDG_DATA_DIRS", "/tmp/.mount_poe-oAbC12/share:/usr/local/share:/usr/share")
+        .env("LD_PRELOAD", "/tmp/.mount_poe-oAbC12/lib/anylinux.so")
+        .output()
+        .unwrap();
+
+    let mut expected: Vec<String> = steam.iter().map(|v| v.to_string()).collect();
+    expected.sort();
+    assert_eq!(environ_list(&out.stdout), expected);
+    // The overlay starts from the AppImage file, with Steam's environment
+    // but without its overlay preload.
+    let args = fs::read_to_string(dir.path().join("appimage-args")).unwrap();
+    assert!(args.starts_with("overlay --game-pid "), "AppImage started with: {args}");
+    let overlay_env = environ_list(&fs::read(dir.path().join("appimage-env")).unwrap());
+    assert!(overlay_env.contains(&"XDG_DATA_DIRS=/usr/local/share:/usr/share".to_owned()), "{overlay_env:?}");
+    assert!(!overlay_env.iter().any(|v| v.starts_with("LD_PRELOAD=") || v.starts_with("GTK_PATH=")), "{overlay_env:?}");
+}
