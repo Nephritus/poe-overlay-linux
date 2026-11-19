@@ -15,12 +15,20 @@ _Avoid_: Player, account, toon
 ## Overlay
 
 **Overlay**:
-The always-on-top, see-through layer over the game window that holds Panels; it shows only while the game is focused and takes the keyboard only while the player types in one of its boxes (a Price Check minimum or maximum).
+The always-on-top, see-through layer over the game window that holds Panels; it shows only while the game is focused and takes the keyboard only while the player types in one of its boxes (a Price Check minimum or maximum, a Menu box) or records a Hotkey.
 _Avoid_: Window, HUD, companion (the program as a whole)
 
 **Panel**:
 One box of content in the Overlay, shown or hidden on its own; only shown Panels catch clicks.
 _Avoid_: Widget, popup, card (reserved for Trade Request cards inside a Panel)
+
+**Menu**:
+The Panel where the player changes settings and turns Features on or off while the game runs; the game keeps the keyboard while it's open.
+_Avoid_: Settings Panel, options, config screen
+
+**Feature**:
+A part of the Overlay the player can turn off as a whole: Route, Currency Rates, Price Check, trade-site search, Trade Requests; a Feature that's off shows nothing and has no Hotkey.
+_Avoid_: Module, plugin, tool
 
 **Action**:
 A request the running Overlay carries out, such as toggling the Currency Rates Panel; sent by a Hotkey or by `poe-overlay trigger`.
@@ -31,7 +39,7 @@ A key combination, chosen in `[hotkeys]`, that the overlay grabs in Xwayland whi
 _Avoid_: Shortcut, keybind (the compositor's own entry), macro
 
 **Settings window**:
-The normal window `poe-overlay settings` opens, where the player types and chooses settings; separate from the Overlay, which takes the keyboard only for a Price Check bound.
+The normal window `poe-overlay settings` opens, with the same settings as the Menu, for when the game isn't running.
 _Avoid_: Preferences, options dialog, config editor
 
 ## Leveling

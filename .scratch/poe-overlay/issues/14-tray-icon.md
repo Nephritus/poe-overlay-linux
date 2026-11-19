@@ -4,8 +4,12 @@
 
 **Blocked by:** 09 (Settings window)
 
-**Status:** ready-for-agent
+**Status:** wontfix
 
 - [ ] With a tray present, the icon appears while the overlay runs
 - [ ] Settings opens the settings window; Quit stops the overlay without affecting the game
 - [ ] Without a tray, startup is clean with no error output
+
+## Comments
+
+Superseded by `.scratch/v0.2/issues/15-tray-icon.md` (2026-11-19): the tray's items are now Menu and Quit overlay.
