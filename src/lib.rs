@@ -1,3 +1,4 @@
+mod base64;
 pub mod browsers;
 mod chat_sender;
 mod clipboard;
@@ -8,6 +9,7 @@ pub mod focus;
 mod game_cursor;
 pub mod hotkeys;
 pub mod http;
+mod host_env;
 mod item_copier;
 pub mod key_grab;
 mod keyring;

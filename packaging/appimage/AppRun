@@ -1,0 +1,12 @@
+#!/bin/sh
+# Entry point of the AppImage. Hands the environment it was started with to
+# the program (src/host_env.rs), which starts the game, the browser and itself
+# with it rather than with the bundled libraries' settings; bin/poe-overlay
+# (sharun) then sets those up and runs the program.
+if POE_OVERLAY_HOST_ENV=$(base64 -w0 </proc/$$/environ); then
+	export POE_OVERLAY_HOST_ENV
+else
+	unset POE_OVERLAY_HOST_ENV
+fi
+APPDIR=${APPDIR:-$(dirname "$(readlink -f "$0")")}
+exec "$APPDIR/bin/poe-overlay" "$@"

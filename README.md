@@ -8,22 +8,38 @@ This product isn't affiliated with or endorsed by Grinding Gear Games in any way
 
 - A Wayland compositor with `wlr-layer-shell` (the overlay draws over the game with it), a list of windows (`wlr-foreign-toplevel-management`, or KDE Plasma's window management) and Xwayland: niri, KDE Plasma 6, Hyprland or sway. GNOME has no layer-shell and isn't supported: the overlay prints why and exits, and the game runs without it.
 - On KDE Plasma 6.0 to 6.7, KWin shows its window list only to programs whose desktop entry asks for it. The overlay writes a hidden one for itself, `~/.local/share/applications/io.github.nephritus.PoeOverlay.KWin.desktop`, and rewrites it when the program moves (an AppImage runs from a new place each time). Plasma 6.8 and later don't need it. Delete it if you remove the overlay.
-- GTK 4 and gtk4-layer-shell. On Arch: `pacman -S gtk4 gtk4-layer-shell`.
+- GTK 4.12+ and gtk4-layer-shell 1.0+, which the packages pull in and the AppImage bundles. Ubuntu 24.04 has no gtk4-layer-shell: use the AppImage there.
 - The English game client.
 
-## Build
+## Install
 
-```sh
-cargo build --release
-```
+Each [release](https://github.com/nephritus/poe-overlay-linux/releases) has these, all installing the program as `poe-overlay`. Flatpak isn't offered: its sandbox keeps the overlay from `/dev/uinput`, the Steam folder and the game's process.
+
+| Distro | Install |
+|---|---|
+| Arch, Manjaro, CachyOS, EndeavourOS | `poe-overlay` from the AUR, e.g. `paru -S poe-overlay` |
+| Debian 13+, Ubuntu 25.04+ | `sudo apt install ./poe-overlay_*_amd64.deb` |
+| Fedora 43+ | `sudo dnf install ./poe-overlay-*.fc43.x86_64.rpm` |
+| Any other (Ubuntu 24.04, SteamOS, …) | the `.AppImage`: make it executable and put it where it stays, e.g. `~/Applications/poe-overlay.AppImage` |
+| With Rust | `cargo install --locked --git https://github.com/nephritus/poe-overlay-linux`, after installing GTK 4 and gtk4-layer-shell with their development files (e.g. `libgtk-4-dev libgtk4-layer-shell-dev` on Debian) |
+
+The packages also install the [uinput rule](#price-check-keys) and a "PoE Overlay Settings" menu entry. The AppImage carries every library it needs and starts the game with the environment Steam gave it, not with the bundled libraries' settings.
+
+### Building the releases
+
+`packaging/release.sh` builds the source tarball, the .deb (in Debian 13), the .rpm (in Fedora 43) and the AppImage (in Arch Linux, with [quick-sharun](https://github.com/pkgforge-dev/Anylinux-AppImages)) into `dist/`, each in a podman container, and fills in the AUR package (`dist/aur/PKGBUILD`, `.SRCINFO`) with the tarball's checksum. It then installs each artifact, the AUR package and `cargo install` into clean containers and checks that each runs, starts its overlay under a headless compositor, keeps one overlay when launched twice, and stops it when the game exits. The container images (by digest), the Rust version and the AppImage tools are pinned and file times come from the last commit, but the distro packages are whatever the mirrors have that day, so a rebuild matches in content, not byte for byte. A version tag runs the same command on GitHub Actions (`.github/workflows/release.yml`) and attaches the artifacts to the release; then push `dist/aur/PKGBUILD` and `.SRCINFO` to the AUR's `poe-overlay` repository.
+
+For development, `cargo build --release`.
 
 ## Use with Steam
 
 Set the game's launch options to:
 
 ```
-/path/to/poe-overlay launch -- %command%
+poe-overlay launch -- %command%
 ```
+
+With the AppImage or a program outside Steam's PATH, use its full path, e.g. `~/Applications/poe-overlay.AppImage launch -- %command%`.
 
 The overlay starts with the game, shows only while the game window is focused (on the game's monitor), and exits when the game exits. It takes keys from the game only while you type in one of its boxes (a Price Check minimum or maximum). Only one overlay runs at a time.
 
@@ -119,7 +135,7 @@ Each Listing has a button to reach its seller; nothing is sent without a click, 
 
 The clipboard is read once per press (GGG's rule for tools). Before the copy, the overlay puts a placeholder on the clipboard: with Proton 11 the game's copy otherwise doesn't reach other programs. The copied item stays on your clipboard, as when you copy it yourself.
 
-Keys are pressed through a virtual keyboard (`/dev/uinput`), which works on any compositor. Steam's udev rules already allow it on most systems; if not, the Panel shows the rule to add:
+<a id="price-check-keys"></a>Keys are pressed through a virtual keyboard (`/dev/uinput`), which works on any compositor. The packages install a udev rule allowing it, and Steam's udev rules already do on most systems; if not (AppImage, `cargo install`), the Panel shows the rule to add:
 
 ```
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

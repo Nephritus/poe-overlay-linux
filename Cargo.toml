@@ -2,6 +2,16 @@
 name = "poe-overlay"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
+description = "Path of Exile 1 overlay for Wayland: leveling Route, Price Check, Trade Requests"
+authors = ["Nephritus <90871716+Nephritus@users.noreply.github.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/nephritus/poe-overlay-linux"
+readme = "README.md"
+keywords = ["path-of-exile", "overlay", "wayland", "gtk4"]
+categories = ["games"]
+# The published crate, which `cargo install` builds: no tests, notes or prototypes.
+include = ["/src", "/data", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 
 [dependencies]
 aes = "0.9"

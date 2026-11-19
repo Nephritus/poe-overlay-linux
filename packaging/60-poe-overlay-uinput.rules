@@ -1,0 +1,4 @@
+# poe-overlay presses keys through a virtual keyboard (/dev/uinput) for Price
+# Check and Trade Request replies. This lets the logged-in user open it, as
+# Steam's own rules do.
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

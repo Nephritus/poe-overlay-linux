@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=PoE Overlay Settings
+Comment=League, Client.txt and trade site login for the Path of Exile overlay
+Exec=poe-overlay settings
+Icon=io.github.nephritus.PoeOverlay
+Terminal=false
+Categories=Game;Settings;
+Keywords=Path of Exile;PoE;overlay;trade;
+StartupWMClass=io.github.nephritus.PoeOverlay.Settings

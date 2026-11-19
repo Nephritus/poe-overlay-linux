@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use crate::base64;
+
 use super::login::{BrowserLogin, Login, ReadBrowsers};
 use super::prices::encode;
 use super::trade::{ListingKind, TRADE_SITE, TradeQuery};
@@ -86,7 +88,7 @@ impl fmt::Debug for HideoutToken {
 
 impl HideoutToken {
     fn new(token: String) -> HideoutToken {
-        let expires = token.split('.').nth(1).and_then(base64url).and_then(|claims| {
+        let expires = token.split('.').nth(1).and_then(base64::decode_url).and_then(|claims| {
             #[derive(Deserialize)]
             struct Claims {
                 exp: i64,
@@ -95,29 +97,6 @@ impl HideoutToken {
         });
         HideoutToken { token, expires }
     }
-}
-
-/// Decodes unpadded base64url (a JSON Web Token's parts).
-fn base64url(text: &str) -> Option<Vec<u8>> {
-    let value = |byte: u8| match byte {
-        b'A'..=b'Z' => Some(byte - b'A'),
-        b'a'..=b'z' => Some(byte - b'a' + 26),
-        b'0'..=b'9' => Some(byte - b'0' + 52),
-        b'-' => Some(62),
-        b'_' => Some(63),
-        _ => None,
-    };
-    let mut out = Vec::with_capacity(text.len() * 3 / 4);
-    let (mut bits, mut held) = (0u32, 0);
-    for byte in text.bytes() {
-        bits = bits << 6 | u32::from(value(byte)?);
-        held += 6;
-        if held >= 8 {
-            held -= 8;
-            out.push((bits >> held) as u8);
-        }
-    }
-    Some(out)
 }
 
 /// What the trade site did with a Travel to Hideout.

@@ -1,0 +1,48 @@
+# Maintainer: Nephritus <90871716+Nephritus@users.noreply.github.com>
+# Template: packaging/release.sh writes dist/aur/PKGBUILD and .SRCINFO with
+# the version and the tarball's checksum filled in, for pushing to the AUR.
+pkgname=poe-overlay
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc='Path of Exile 1 overlay for Wayland: leveling Route, Price Check, Trade Requests'
+arch=('x86_64')
+url='https://github.com/nephritus/poe-overlay-linux'
+license=('MIT OR Apache-2.0')
+depends=('cairo' 'gcc-libs' 'glib2' 'glibc' 'graphene' 'gtk4' 'gtk4-layer-shell' 'libxkbcommon' 'sqlite')
+makedepends=('cargo')
+optdepends=('xorg-xwayland: hotkeys and Price Check with the game under Xwayland (most compositors start it)'
+            'xwayland-satellite: Xwayland for niri')
+# makepkg's LTO turns ring's C objects (TLS for the trade site) into GCC
+# bitcode that Rust's linker can't read: the link fails on ring_core symbols.
+options=('!lto')
+# The source tarball packaging/release.sh makes, attached to the GitHub release.
+source=("$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
+sha256sums=('@SHA256@')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc --print host-tuple)"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  # Without a Wayland session the tests that start an overlay skip themselves.
+  env -u WAYLAND_DISPLAY -u DISPLAY cargo test --frozen --release
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  sh packaging/install-files.sh "$pkgdir" target/release/poe-overlay
+  install -Dm644 LICENSE-MIT LICENSE-APACHE -t "$pkgdir/usr/share/licenses/$pkgname"
+  install -Dm644 data/exile-leveling/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE-exile-leveling"
+  install -Dm644 README.md -t "$pkgdir/usr/share/doc/$pkgname"
+}

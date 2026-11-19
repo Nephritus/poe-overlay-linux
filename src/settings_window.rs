@@ -36,7 +36,7 @@ pub fn run() -> ExitCode {
 
 /// Starts `poe-overlay settings` from the overlay: a window of its own.
 pub fn open() {
-    let started = std::env::current_exe().and_then(|program| std::process::Command::new(program).arg("settings").spawn());
+    let started = crate::host_env::own_command().and_then(|mut program| program.arg("settings").spawn());
     match started {
         // Reaped on a thread, so the overlay never waits for the window.
         Ok(mut window) => drop(std::thread::spawn(move || window.wait())),
@@ -292,7 +292,7 @@ impl SettingsWindow {
                 let mut text = String::from("Log in on pathofexile.com in your browser; this notices it by itself.");
                 if !opened {
                     opened = true;
-                    if let Err(err) = gio::AppInfo::launch_default_for_uri(login::LOGIN_PAGE, gio::AppLaunchContext::NONE) {
+                    if let Err(err) = gio::AppInfo::launch_default_for_uri(login::LOGIN_PAGE, crate::host_env::launch_context().as_ref()) {
                         text = format!("Couldn't open your browser ({err}): log in on {} there; this notices it by itself.", login::LOGIN_PAGE);
                     }
                 }
