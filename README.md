@@ -17,7 +17,7 @@ Each [release](https://github.com/nephritus/poe-overlay-linux/releases) has thes
 
 | Distro | Install |
 |---|---|
-| Arch, Manjaro, CachyOS, EndeavourOS | `poe-overlay` from the AUR, e.g. `paru -S poe-overlay` |
+| Arch, Manjaro, CachyOS, EndeavourOS | Not on the AUR yet. Download the release's `PKGBUILD` into an empty folder and run `makepkg -si` there |
 | Debian 13+, Ubuntu 25.04+ | `sudo apt install ./poe-overlay_*_amd64.deb` |
 | Fedora 43+ | `sudo dnf install ./poe-overlay-*.fc43.x86_64.rpm` |
 | Any other (Ubuntu 24.04, SteamOS, …) | the `.AppImage`: make it executable and put it where it stays, e.g. `~/Applications/poe-overlay.AppImage` |

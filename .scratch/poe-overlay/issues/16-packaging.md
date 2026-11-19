@@ -40,6 +40,6 @@ User's choices (form): MIT OR Apache-2.0; one podman script, also run by GitHub 
 
 | Check | Pass when | Result |
 |---|---|---|
-| Publish | Push the repo to GitHub, tag `v0.1.0`: the workflow attaches the five files; push `dist/aur/*` to the AUR | |
+| Publish | Push the repo to GitHub, tag `v0.1.0`: the workflow attaches the files; push `dist/aur/*` to the AUR | GitHub: done 2026-11-19 (repo created, release v0.1.0; the workflow's upload step failed on `dist/aur`, fixed in 421f590, so the release was attached by hand from that run's artifacts, with the filled-in `PKGBUILD`). AUR: pending, registration closed |
 | AppImage from Steam | Launch option `~/Applications/poe-overlay.AppImage launch -- %command%`: PoE starts, the overlay shows in game, the Steam overlay (Shift+Tab) still works | |
 | A package from Steam | Same with an installed package's `poe-overlay launch -- %command%` on Debian/Ubuntu or Fedora | |

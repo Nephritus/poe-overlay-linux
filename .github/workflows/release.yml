@@ -29,6 +29,6 @@ jobs:
         run: |
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
           [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "tag $GITHUB_REF_NAME isn't v$version from Cargo.toml"; exit 1; }
-          # The files only: dist/aur/ goes to the AUR, not the release.
+          # The files, and the filled-in PKGBUILD for building it on Arch.
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
-            dist/*.tar.gz dist/*.deb dist/*.rpm dist/*.AppImage dist/SHA256SUMS
+            dist/*.tar.gz dist/*.deb dist/*.rpm dist/*.AppImage dist/SHA256SUMS dist/aur/PKGBUILD
